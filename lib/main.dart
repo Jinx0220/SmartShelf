@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
-import 'productlist_screen.dart';
+import 'package:smartshelf/loginandregister_screen.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(MyHomePage());
 }
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class MyHomePage extends StatelessWidget {
+  const MyHomePage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: ProductListScreen(),
+      title: "AI38",
+      home: LoginAndRegister(),
     );
   }
 }
+

@@ -38,6 +38,13 @@ dependencies:
   shared_preferences: ^2.5.5
   fluttertoast: ^9.0.0
   pinput: ^5.0.0
+  fl_chart: ^0.69.0
+  share_plus: ^10.1.0
+  csv: ^6.0.0
+  path_provider: ^2.1.5
+  font_awesome_flutter: ^10.7.0
+
+
 
 dev_dependencies:
   flutter_test:

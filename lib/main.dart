@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:smartshelf/login_screen.dart';
+import 'package:smartshelf/navigation_screen.dart';
+
 
 void main() {
   runApp(const MyApp());
@@ -17,7 +18,7 @@ class MyApp extends StatelessWidget {
         fontFamily: 'Manrope',
         primarySwatch: Colors.blue,
       ),
-      home: const LoginScreen(),
+      home: const MainNavigationScreen(),
     );
   }
 }

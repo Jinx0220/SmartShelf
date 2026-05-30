@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "650324537887",
+    "project_id": "smartshelf-03",
+    "storage_bucket": "smartshelf-03.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:650324537887:android:0eb13d85dc2ce756871b2a",
+        "android_client_info": {
+          "package_name": "com.smartshelf.smartshelf"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDo2bq4M7HHYHzXcyPQ4XAj1y2JSYlrsDk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -7,7 +7,7 @@ import '../utils/formatters.dart';
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
-  @override
+  @overridet
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 

@@ -177,6 +177,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                   style: GoogleFonts.manrope(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
+                    color: AppColor.neutral
                   ),
                 ),
                 style: ElevatedButton.styleFrom(

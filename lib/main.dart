@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:smartshelf/navigation_screen.dart';
+import 'package:smartshelf/suggested_order.dart';
 
 
 void main() {
@@ -18,7 +19,7 @@ class MyApp extends StatelessWidget {
         fontFamily: 'Manrope',
         primarySwatch: Colors.blue,
       ),
-      home: const MainNavigationScreen(),
+      home: const SuggestedOrderScreen(),
     );
   }
 }

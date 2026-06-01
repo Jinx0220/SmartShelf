@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'providers/sale_provider.dart';
 import 'providers/product_provider.dart';
 import 'providers/theme_provider.dart';
-import 'screens/main_navigation_screen.dart';
+import 'navigation_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -27,7 +27,7 @@ class MyApp extends StatelessWidget {
             theme: themeProvider.lightTheme,
             darkTheme: themeProvider.darkTheme,
             themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-            home: const MainNavigationScreen(),
+            home: const NavigationScreen(),
             debugShowCheckedModeBanner: false,
           );
         },

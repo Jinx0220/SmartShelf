@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:smartshelf/AIpredictions_screen.dart';
-import 'package:smartshelf/dashboard_screen.dart';
-import 'package:smartshelf/productlist_screen.dart';
-import 'package:smartshelf/logsale.dart';
-
-import 'package:smartshelf/settings.dart';
-import 'package:smartshelf/utils/colors.dart';
+import 'package:smartshelf/view/AIpredictions_screen.dart';
+import '../utils/colors.dart';
+import 'priority_dashboard_screen.dart';
+import 'product_list_screen.dart';
+import 'log_sale_screen.dart';
+import 'settings_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -26,7 +25,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   final List<Widget> _screens = [
-    const DashboardScreen(),
+    const PriorityDashboardScreen(),
     const ProductListScreen(),
     const LogSaleScreen(),
     const AIPredictionsScreen(),

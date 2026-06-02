@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:smartshelf/dashboard_screen.dart';
-import 'package:smartshelf/login_screen.dart';
-import 'package:smartshelf/utils/colors.dart';
+import 'package:smartshelf/view/navigation_screen.dart';
+import '../utils/colors.dart';
+import 'login_screen.dart';
+
 
 class OTPScreen extends StatefulWidget {
   final String phoneNumber;
@@ -43,6 +44,15 @@ class _OTPScreenState extends State<OTPScreen> {
     super.dispose();
   }
 
+  // ==================== DATA METHODS (Future Firebase Ready) ====================
+
+  Future<void> _saveLoginState(bool isLoggedIn) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool("isLoggedIn", isLoggedIn);
+  }
+
+  // ==================== OTP METHODS ====================
+
   void _startTimer() {
     Future.delayed(const Duration(seconds: 1), () {
       if (mounted && timerSeconds > 0) {
@@ -71,13 +81,12 @@ class _OTPScreenState extends State<OTPScreen> {
       Fluttertoast.showToast(msg: "Verification Successful");
 
       if (widget.fromRegister) {
-        final SharedPreferences prefs = await SharedPreferences.getInstance();
-        await prefs.setBool("isLoggedIn", true);
+        await _saveLoginState(true);
 
         if (mounted) {
           Navigator.pushAndRemoveUntil(
             context,
-            MaterialPageRoute(builder: (context) => const DashboardScreen()),
+            MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
                 (route) => false,
           );
         }
@@ -120,7 +129,7 @@ class _OTPScreenState extends State<OTPScreen> {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: AppColor.primary.withOpacity(0.1),
+                    color: AppColor.primary.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(

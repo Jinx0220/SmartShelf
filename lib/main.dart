@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'providers/sale_provider.dart';
-import 'providers/product_provider.dart';
-import 'providers/theme_provider.dart';
-import 'navigation_screen.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:smartshelf/view/navigation_screen.dart';
+import 'view/login_screen.dart';
+import 'utils/colors.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SharedPreferences.getInstance();
   runApp(const MyApp());
 }
 
@@ -14,24 +16,24 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => SaleProvider()),
-        ChangeNotifierProvider(create: (_) => ProductProvider()),
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
-      ],
-      child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, child) {
-          return MaterialApp(
-            title: 'SmartShelf',
-            theme: themeProvider.lightTheme,
-            darkTheme: themeProvider.darkTheme,
-            themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-            home: const NavigationScreen(),
-            debugShowCheckedModeBanner: false,
-          );
-        },
+    return MaterialApp(
+      title: 'SmartShelf',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        fontFamily: 'Manrope',
+        primarySwatch: Colors.blue,
+        scaffoldBackgroundColor: AppColor.background,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: AppColor.primary,
+          elevation: 0,
+          centerTitle: true,
+        ),
       ),
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const LoginScreen(),
+        '/dashboard': (context) => const MainNavigationScreen(),
+      },
     );
   }
 }

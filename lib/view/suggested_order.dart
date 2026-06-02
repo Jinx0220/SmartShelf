@@ -6,7 +6,9 @@ import 'package:share_plus/share_plus.dart';
 import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
-import 'utils/colors.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/colors.dart';
 
 class SuggestedOrderScreen extends StatefulWidget {
   const SuggestedOrderScreen({super.key});
@@ -16,53 +18,69 @@ class SuggestedOrderScreen extends StatefulWidget {
 }
 
 class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
-  List<OrderItem> orderItems = [
-    OrderItem(
-      id: '1',
-      name: 'Milk 1L',
-      currentStock: 8,
-      threshold: 15,
-      aiPrediction: 12,
-      suggestedQty: 19,
-      unit: 'units',
-    ),
-    OrderItem(
-      id: '2',
-      name: 'Coke 500ml',
-      currentStock: 2,
-      threshold: 10,
-      aiPrediction: 15,
-      suggestedQty: 23,
-      unit: 'bottles',
-    ),
-    OrderItem(
-      id: '3',
-      name: 'Wai Wai Noodles',
-      currentStock: 5,
-      threshold: 20,
-      aiPrediction: 18,
-      suggestedQty: 33,
-      unit: 'packs',
-    ),
-    OrderItem(
-      id: '4',
-      name: 'Cooking Oil 1L',
-      currentStock: 0,
-      threshold: 8,
-      aiPrediction: 10,
-      suggestedQty: 18,
-      unit: 'bottles',
-    ),
-    OrderItem(
-      id: '5',
-      name: 'Salt 1kg',
-      currentStock: 15,
-      threshold: 10,
-      aiPrediction: 5,
-      suggestedQty: 0,
-      unit: 'packs',
-    ),
-  ];
+  List<OrderItem> orderItems = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+
+    final prefs = await SharedPreferences.getInstance();
+
+    // Load products
+    final String? productsJson = prefs.getString('products');
+    if (productsJson != null) {
+      List<dynamic> decoded = json.decode(productsJson);
+      List<Product> products = decoded.map((e) => Product.fromJson(e)).toList();
+
+      // Generate order items from products that need reordering
+      orderItems = [];
+      for (var product in products) {
+        // Simple AI prediction: average of last 4 weeks (using mock for now)
+        int aiPrediction = _calculateAIPrediction(product);
+
+        // Suggested quantity = (threshold - currentStock) + AI prediction, minimum 0
+        int suggestedQty = (product.threshold - product.stock) + aiPrediction;
+        if (suggestedQty < 0) suggestedQty = 0;
+
+        // Only include products that need ordering
+        if (suggestedQty > 0) {
+          orderItems.add(OrderItem(
+            id: product.id,
+            name: product.name,
+            currentStock: product.stock,
+            threshold: product.threshold,
+            aiPrediction: aiPrediction,
+            suggestedQty: suggestedQty,
+            unit: 'units',
+          ));
+        }
+      }
+
+      // Sort by suggested quantity (highest first)
+      orderItems.sort((a, b) => b.suggestedQty.compareTo(a.suggestedQty));
+    }
+
+    setState(() => _isLoading = false);
+  }
+
+  int _calculateAIPrediction(Product product) {
+    // Simple AI prediction based on product type
+    // In real implementation, this would use historical sales data
+    if (product.name.contains('Rice') || product.name.contains('Oil')) {
+      return 10;
+    } else if (product.name.contains('Milk') || product.name.contains('Noodles')) {
+      return 15;
+    } else if (product.stock < product.threshold) {
+      return product.threshold - product.stock;
+    }
+    return 5;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -83,7 +101,9 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
         elevation: 0,
         centerTitle: true,
       ),
-      body: Column(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
+          : Column(
         children: [
           Container(
             padding: const EdgeInsets.all(16),
@@ -101,7 +121,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColor.primary.withOpacity(0.1),
+                    color: AppColor.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -144,58 +164,62 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                 ],
               ),
             )
-                : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: visibleItems.length,
-              itemBuilder: (context, index) {
-                final item = visibleItems[index];
-                return _buildOrderCard(item, index);
-              },
-            ),
-          ),
-
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColor.background,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.shade200,
-                  blurRadius: 8,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-            ),
-            child: SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: () => _showExportOptions(visibleItems),
-                icon: const Icon(Icons.share, color: Colors.white),
-                label: Text(
-                  "Export Order",
-                  style: GoogleFonts.manrope(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AppColor.neutral
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColor.primary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  elevation: 3,
-                ),
+                : RefreshIndicator(
+              onRefresh: _loadData,
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: visibleItems.length,
+                itemBuilder: (context, index) {
+                  final item = visibleItems[index];
+                  return _buildOrderCard(item);
+                },
               ),
             ),
           ),
+
+          if (visibleItems.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColor.background,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.shade200,
+                    blurRadius: 8,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: () => _showExportOptions(visibleItems),
+                  icon: const Icon(Icons.share, color: Colors.white),
+                  label: Text(
+                    "Export Order",
+                    style: GoogleFonts.manrope(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColor.primary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    elevation: 3,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildOrderCard(OrderItem item, int index) {
+  Widget _buildOrderCard(OrderItem item) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
@@ -225,8 +249,8 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: item.currentStock < item.threshold
-                        ? AppColor.primary.withOpacity(0.1)
-                        : AppColor.success.withOpacity(0.1),
+                        ? AppColor.primary.withValues(alpha: 0.1)
+                        : AppColor.success.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -348,24 +372,6 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                 ],
               ),
             ),
-
-            if (item.currentStock >= item.threshold && item.aiPrediction < item.currentStock)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 14, color: AppColor.success),
-                    const SizedBox(width: 4),
-                    Text(
-                      "Stock sufficient. No need to order.",
-                      style: GoogleFonts.manrope(
-                        fontSize: 12,
-                        color: AppColor.success,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
           ],
         ),
       ),
@@ -376,7 +382,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -559,6 +565,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
   }
 }
 
+// Temporary models
 class OrderItem {
   String id;
   String name;
@@ -577,4 +584,44 @@ class OrderItem {
     required this.suggestedQty,
     required this.unit,
   });
+}
+
+class Product {
+  final String id;
+  final String name;
+  final int stock;
+  final int threshold;
+  final int price;
+  final String category;
+  final int? oldPrice;
+
+  Product({
+    required this.id,
+    required this.name,
+    required this.stock,
+    required this.threshold,
+    required this.price,
+    required this.category,
+    this.oldPrice,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'stock': stock,
+    'threshold': threshold,
+    'price': price,
+    'category': category,
+    'oldPrice': oldPrice,
+  };
+
+  factory Product.fromJson(Map<String, dynamic> json) => Product(
+    id: json['id'],
+    name: json['name'],
+    stock: json['stock'],
+    threshold: json['threshold'],
+    price: json['price'],
+    category: json['category'],
+    oldPrice: json['oldPrice'],
+  );
 }

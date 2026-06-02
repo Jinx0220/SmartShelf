@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:smartshelf/dashboard_screen.dart';
-import 'package:smartshelf/otp_screen.dart';
-import 'package:smartshelf/register_screen.dart';
-import 'package:smartshelf/utils/colors.dart';
+import 'package:smartshelf/view/navigation_screen.dart';
+import '../utils/colors.dart';
+import 'otp_screen.dart';
+import 'register_screen.dart';
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -26,27 +27,51 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  // ==================== DATA METHODS (Future Firebase Ready) ====================
+
+  Future<Map<String, String?>> _getSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'phone': prefs.getString('phone'),
+      'password': prefs.getString('password'),
+    };
+  }
+
+  Future<void> _saveLoginState(bool isLoggedIn) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool("isLoggedIn", isLoggedIn);
+  }
+
+  Future<void> _clearLoginState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove("isLoggedIn");
+  }
+
+  // ==================== AUTH METHODS ====================
+
   Future<void> handleLogin() async {
     if (phoneController.text.isEmpty || passwordController.text.isEmpty) {
       Fluttertoast.showToast(msg: "Please enter Phone number and Password");
       return;
     }
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String? savedPhone = prefs.getString("phone");
-    final String? savedPassword = prefs.getString("password");
+
+    final credentials = await _getSavedCredentials();
+    final savedPhone = credentials['phone'];
+    final savedPassword = credentials['password'];
 
     if (savedPhone == null || savedPassword == null) {
       Fluttertoast.showToast(msg: "No account Found. Please sign up first");
       return;
     }
+
     if (savedPhone == phoneController.text && savedPassword == passwordController.text) {
       Fluttertoast.showToast(msg: "Login Successful");
-      await prefs.setBool("isLoggedIn", true);
+      await _saveLoginState(true);
 
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const DashboardScreen()),
+          MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
         );
       }
     } else {

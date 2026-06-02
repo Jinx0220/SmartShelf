@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:smartshelf/login_screen.dart';
-import 'package:smartshelf/otp_screen.dart';
-import 'package:smartshelf/utils/colors.dart';
+import '../utils/colors.dart';
+import 'login_screen.dart';
+import 'otp_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -32,6 +32,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
     confirmPasswordController.dispose();
     super.dispose();
   }
+
+  // ==================== DATA METHODS (Future Firebase Ready) ====================
+
+  Future<bool> _saveUserData({
+    required String fullName,
+    required String email,
+    required String phone,
+    required String password,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString("fullName", fullName);
+      await prefs.setString("email", email);
+      await prefs.setString("phone", phone);
+      await prefs.setString("password", password);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> _checkIfUserExists(String phone) async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedPhone = prefs.getString("phone");
+    return savedPhone == phone;
+  }
+
+  // ==================== AUTH METHODS ====================
 
   void handleRegister() async {
     if (fullNameController.text.isEmpty) {
@@ -71,11 +99,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setString("fullName", fullNameController.text);
-    await prefs.setString("email", emailController.text);
-    await prefs.setString("phone", phoneController.text);
-    await prefs.setString("password", passwordController.text);
+    // Check if user already exists
+    final exists = await _checkIfUserExists(phoneController.text);
+    if (exists) {
+      Fluttertoast.showToast(msg: "User already exists. Please login.");
+      return;
+    }
+
+    final success = await _saveUserData(
+      fullName: fullNameController.text,
+      email: emailController.text,
+      phone: phoneController.text,
+      password: passwordController.text,
+    );
+
+    if (!success) {
+      Fluttertoast.showToast(msg: "Registration failed. Please try again.");
+      return;
+    }
 
     Fluttertoast.showToast(msg: "Registration Successful! Please verify OTP.");
 

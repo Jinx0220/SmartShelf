@@ -4,7 +4,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../utils/colors.dart';
-import 'bulk_import_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -14,7 +13,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  bool _notificationsEnabled = true;
   String _selectedCurrency = 'NPR';
   String _selectedLanguage = 'English';
 
@@ -63,7 +61,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _notificationsEnabled = prefs.getBool('notifications') ?? true;
       _selectedCurrency = prefs.getString('currency') ?? 'NPR';
       _selectedLanguage = prefs.getString('language') ?? 'English';
     });
@@ -71,7 +68,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _savePreferences() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('notifications', _notificationsEnabled);
     await prefs.setString('currency', _selectedCurrency);
     await prefs.setString('language', _selectedLanguage);
   }
@@ -309,94 +305,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _loadSampleProducts() async {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          "Load Sample Products",
-          style: GoogleFonts.spaceGrotesk(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: AppColor.primary,
-          ),
-        ),
-        content: Text(
-          "This will add 50+ sample products for testing. Continue?",
-          style: GoogleFonts.manrope(fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text("Cancel", style: GoogleFonts.manrope(color: AppColor.secondary)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _generateSampleProducts();
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColor.primary),
-            child: Text("Yes, Load Samples", style: GoogleFonts.manrope(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _generateSampleProducts() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final List<String> categories = ['Grocery', 'Dairy', 'Beverages', 'Snacks', 'Vegetables', 'Fruits'];
-    final List<String> productNames = [
-      'Rice', 'Flour', 'Sugar', 'Salt', 'Cooking Oil', 'Tea Leaves', 'Coffee Powder', 'Milk', 'Butter', 'Cheese',
-      'Coca Cola', 'Pepsi', 'Mineral Water', 'Fruit Juice', 'Potato Chips', 'Biscuits', 'Chocolate Bar',
-      'Ice Cream', 'Bread', 'Eggs', 'Tomato', 'Onion', 'Potato', 'Carrot', 'Apple', 'Banana',
-      'Orange', 'Grapes', 'Mango', 'Pineapple', 'Yogurt', 'Paneer', 'Honey', 'Jam', 'Peanut Butter',
-      'Instant Noodles', 'Pasta', 'Tomato Sauce', 'Pickle', 'Garam Masala', 'Red Lentils', 'Breakfast Cereal',
-      'Oats', 'Ghee', 'Wheat Flour', 'Besan', 'Soy Sauce', 'Vinegar', 'Mayonnaise', 'Ketchup'
-    ];
-
-    List<Map<String, dynamic>> sampleProducts = [];
-
-    for (int i = 0; i < productNames.length; i++) {
-      int stock = (i * 7) % 50;
-      sampleProducts.add({
-        'id': DateTime.now().millisecondsSinceEpoch.toString() + i.toString(),
-        'name': productNames[i],
-        'stock': stock,
-        'threshold': 10,
-        'price': 30 + (i * 15) % 500,
-        'category': categories[i % categories.length],
-        'oldPrice': 30 + (i * 15) % 500,
-      });
-    }
-
-    // Load existing products
-    final String? existingJson = prefs.getString('products');
-    List<dynamic> allProducts = [];
-
-    if (existingJson != null && existingJson.isNotEmpty) {
-      allProducts = json.decode(existingJson);
-    }
-
-    // Add sample products that don't already exist
-    int addedCount = 0;
-    for (var sample in sampleProducts) {
-      bool exists = allProducts.any((p) => p['name'].toLowerCase() == sample['name'].toLowerCase());
-      if (!exists) {
-        allProducts.add(sample);
-        addedCount++;
-      }
-    }
-
-    final String productsJson = json.encode(allProducts);
-    await prefs.setString('products', productsJson);
-
-    Fluttertoast.showToast(msg: 'Added $addedCount sample products');
-    if (mounted) setState(() {});
-  }
-
   void _showDeleteConfirmation() {
     showDialog(
       context: context,
@@ -595,23 +503,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Data Management Section
           _buildSectionHeader('Data Management'),
           _buildSettingsTile(
-            icon: Icons.upload_file,
-            title: 'Bulk Import (CSV)',
-            subtitle: 'Import multiple products from CSV file',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const BulkImportScreen()),
-              );
-            },
-          ),
-          _buildSettingsTile(
-            icon: Icons.data_usage,
-            title: 'Load Sample Products',
-            subtitle: 'Add 50+ sample products for testing',
-            onTap: _loadSampleProducts,
-          ),
-          _buildSettingsTile(
             icon: Icons.backup_outlined,
             title: 'Backup Data',
             subtitle: 'Coming soon',
@@ -635,16 +526,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // Preferences Section
           _buildSectionHeader('Preferences'),
-          _buildSwitchTile(
-            icon: Icons.notifications_none_outlined,
-            title: 'Push Notifications',
-            value: _notificationsEnabled,
-            onChanged: (value) async {
-              setState(() => _notificationsEnabled = value);
-              await _savePreferences();
-              Fluttertoast.showToast(msg: 'Notification settings saved');
-            },
-          ),
           _buildDropdownTile(
             icon: Icons.attach_money,
             title: 'Currency',
@@ -731,25 +612,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       trailing: const Icon(Icons.chevron_right, color: AppColor.secondary),
       onTap: onTap,
-    );
-  }
-
-  Widget _buildSwitchTile({
-    required IconData icon,
-    required String title,
-    required bool value,
-    required Function(bool) onChanged,
-  }) {
-    return SwitchListTile(
-      secondary: Icon(icon, color: AppColor.secondary),
-      title: Text(
-        title,
-        style: GoogleFonts.manrope(color: AppColor.neutral),
-      ),
-      value: value,
-      onChanged: onChanged,
-      activeTrackColor: AppColor.primary.withValues(alpha: 0.3),
-      activeColor: AppColor.primary,
     );
   }
 

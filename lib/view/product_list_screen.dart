@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/colors.dart';
 import '../utils/formatters.dart';
+import 'product_detail_screen.dart';  // ← ADD THIS IMPORT
 
 class ProductListScreen extends StatefulWidget {
   const ProductListScreen({super.key});
@@ -27,7 +28,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
     _loadProducts();
   }
 
-  // ==================== DATA METHODS (Future Firebase Ready) ====================
+  // ==================== DATA METHODS ====================
 
   Future<List<Product>> _loadProductsFromStorage() async {
     final prefs = await SharedPreferences.getInstance();
@@ -183,6 +184,17 @@ class _ProductListScreenState extends State<ProductListScreen> {
     return filtered;
   }
 
+  // ==================== NAVIGATION METHODS ====================
+
+  void _navigateToProductDetail(Product product) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProductDetailScreen(productId: product.id),
+      ),
+    ).then((_) => _loadProducts()); // Refresh when coming back
+  }
+
   // ==================== UI METHODS ====================
 
   @override
@@ -256,9 +268,28 @@ class _ProductListScreenState extends State<ProductListScreen> {
                 ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
                 : products.isEmpty
                 ? Center(
-              child: Text(
-                'No products found',
-                style: GoogleFonts.manrope(color: AppColor.secondary),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.inventory, size: 64, color: AppColor.secondary),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No products found',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: AppColor.neutral,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tap the + button to add your first product',
+                    style: GoogleFonts.manrope(
+                      fontSize: 14,
+                      color: AppColor.secondary,
+                    ),
+                  ),
+                ],
               ),
             )
                 : ListView.builder(
@@ -305,89 +336,102 @@ class _ProductListScreenState extends State<ProductListScreen> {
   Widget _buildProductCard(Product product) {
     final isLowStock = product.isLowStock;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.shade100,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 55,
-            height: 55,
-            decoration: BoxDecoration(
-              color: AppColor.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
+    return GestureDetector(
+      onTap: () => _navigateToProductDetail(product),  // ← TAP TO VIEW DETAILS
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade200),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.shade100,
+              blurRadius: 4,
+              offset: const Offset(0, 2),
             ),
-            child: Icon(Icons.inventory_2_outlined, color: AppColor.primary, size: 30),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AppColor.neutral,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Stock: ${product.stock} | Price: ${formatCurrency(product.price)}',
-                  style: GoogleFonts.manrope(
-                    fontSize: 12,
-                    color: AppColor.secondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: isLowStock
-                  ? AppColor.error.withValues(alpha: 0.1)
-                  : AppColor.success.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              isLowStock ? 'Low Stock' : 'In Stock',
-              style: GoogleFonts.manrope(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: isLowStock ? AppColor.error : AppColor.success,
+          ],
+        ),
+        child: Row(
+          children: [
+            // Product Icon
+            Container(
+              width: 55,
+              height: 55,
+              decoration: BoxDecoration(
+                color: AppColor.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                isLowStock ? Icons.warning_amber : Icons.inventory_2_outlined,
+                color: isLowStock ? AppColor.error : AppColor.primary,
+                size: 30,
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert, color: AppColor.secondary),
-            onSelected: (value) {
-              if (value == 'edit') {
-                _showAddEditProductDialog(product: product);
-              } else if (value == 'delete') {
-                _showDeleteConfirmation(product);
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'edit', child: Text('Edit')),
-              const PopupMenuItem(value: 'delete', child: Text('Delete')),
-            ],
-          ),
-        ],
+            const SizedBox(width: 14),
+
+            // Product Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.name,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AppColor.neutral,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Stock: ${product.stock} | Price: ${formatCurrency(product.price)}',
+                    style: GoogleFonts.manrope(
+                      fontSize: 12,
+                      color: AppColor.secondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Stock Status Badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: isLowStock
+                    ? AppColor.error.withValues(alpha: 0.1)
+                    : AppColor.success.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                isLowStock ? 'Low Stock' : 'In Stock',
+                style: GoogleFonts.manrope(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: isLowStock ? AppColor.error : AppColor.success,
+                ),
+              ),
+            ),
+
+            // Menu Button (Edit/Delete)
+            PopupMenuButton<String>(
+              icon: Icon(Icons.more_vert, color: AppColor.secondary),
+              onSelected: (value) {
+                if (value == 'edit') {
+                  _showAddEditProductDialog(product: product);
+                } else if (value == 'delete') {
+                  _showDeleteConfirmation(product);
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                const PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

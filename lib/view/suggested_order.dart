@@ -6,7 +6,10 @@ import 'package:share_plus/share_plus.dart';
 import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
-import 'utils/colors.dart';
+import 'package:provider/provider.dart';
+import '../utils/colors.dart';
+import '../viewmodel/order_viewmodel.dart';
+import '../viewmodel/prediction_viewmodel.dart';
 
 class SuggestedOrderScreen extends StatefulWidget {
   const SuggestedOrderScreen({super.key});
@@ -16,57 +19,25 @@ class SuggestedOrderScreen extends StatefulWidget {
 }
 
 class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
-  List<OrderItem> orderItems = [
-    OrderItem(
-      id: '1',
-      name: 'Milk 1L',
-      currentStock: 8,
-      threshold: 15,
-      aiPrediction: 12,
-      suggestedQty: 19,
-      unit: 'units',
-    ),
-    OrderItem(
-      id: '2',
-      name: 'Coke 500ml',
-      currentStock: 2,
-      threshold: 10,
-      aiPrediction: 15,
-      suggestedQty: 23,
-      unit: 'bottles',
-    ),
-    OrderItem(
-      id: '3',
-      name: 'Wai Wai Noodles',
-      currentStock: 5,
-      threshold: 20,
-      aiPrediction: 18,
-      suggestedQty: 33,
-      unit: 'packs',
-    ),
-    OrderItem(
-      id: '4',
-      name: 'Cooking Oil 1L',
-      currentStock: 0,
-      threshold: 8,
-      aiPrediction: 10,
-      suggestedQty: 18,
-      unit: 'bottles',
-    ),
-    OrderItem(
-      id: '5',
-      name: 'Salt 1kg',
-      currentStock: 15,
-      threshold: 10,
-      aiPrediction: 5,
-      suggestedQty: 0,
-      unit: 'packs',
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+    });
+  }
+
+  Future<void> _loadData() async {
+    final orderVm = context.read<OrderViewModel>();
+    final predictionVm = context.read<PredictionViewModel>();
+
+    // This will be implemented when other ViewModels are ready
+    // For now, show loading state
+  }
 
   @override
   Widget build(BuildContext context) {
-    List<OrderItem> visibleItems = orderItems.where((item) => item.suggestedQty > 0).toList();
+    final orderVm = context.watch<OrderViewModel>();
 
     return Scaffold(
       backgroundColor: AppColor.background,
@@ -82,8 +53,42 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
         backgroundColor: AppColor.primary,
         elevation: 0,
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: _loadData,
+          ),
+        ],
       ),
-      body: Column(
+      body: orderVm.loading
+          ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
+          : orderVm.currentOrder == null || orderVm.currentOrder!.items.isEmpty
+          ? Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.check_circle, size: 64, color: AppColor.primary),
+            const SizedBox(height: 16),
+            Text(
+              "All stocked up!",
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: AppColor.neutral,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "No items need reordering this week",
+              style: GoogleFonts.manrope(
+                fontSize: 14,
+                color: AppColor.secondary,
+              ),
+            ),
+          ],
+        ),
+      )
+          : Column(
         children: [
           Container(
             padding: const EdgeInsets.all(16),
@@ -101,11 +106,11 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColor.primary.withOpacity(0.1),
+                    color: AppColor.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    "${visibleItems.length} items to order",
+                    "${orderVm.currentOrder!.items.length} items to order",
                     style: GoogleFonts.manrope(
                       fontSize: 12,
                       color: AppColor.primary,
@@ -116,44 +121,19 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
               ],
             ),
           ),
-
           Expanded(
-            child: visibleItems.isEmpty
-                ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.check_circle, size: 64, color: AppColor.primary),
-                  const SizedBox(height: 16),
-                  Text(
-                    "All stocked up!",
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: AppColor.neutral,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "No items need reordering this week",
-                    style: GoogleFonts.manrope(
-                      fontSize: 14,
-                      color: AppColor.secondary,
-                    ),
-                  ),
-                ],
+            child: RefreshIndicator(
+              onRefresh: _loadData,
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: orderVm.currentOrder!.items.length,
+                itemBuilder: (context, index) {
+                  final item = orderVm.currentOrder!.items[index];
+                  return _buildOrderCard(item, index, orderVm);
+                },
               ),
-            )
-                : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: visibleItems.length,
-              itemBuilder: (context, index) {
-                final item = visibleItems[index];
-                return _buildOrderCard(item, index);
-              },
             ),
           ),
-
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -166,28 +146,52 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                 ),
               ],
             ),
-            child: SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: () => _showExportOptions(visibleItems),
-                icon: const Icon(Icons.share, color: Colors.white),
-                label: Text(
-                  "Export Order",
-                  style: GoogleFonts.manrope(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AppColor.neutral
+            child: Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _saveOrder(orderVm),
+                    icon: const Icon(Icons.save, color: Colors.white),
+                    label: Text(
+                      "Save Order",
+                      style: GoogleFonts.manrope(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColor.success,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
                   ),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColor.primary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _showExportOptions(orderVm.currentOrder!, orderVm),
+                    icon: const Icon(Icons.share, color: Colors.white),
+                    label: Text(
+                      "Export",
+                      style: GoogleFonts.manrope(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColor.primary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
                   ),
-                  elevation: 3,
                 ),
-              ),
+              ],
             ),
           ),
         ],
@@ -195,7 +199,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
     );
   }
 
-  Widget _buildOrderCard(OrderItem item, int index) {
+  Widget _buildOrderCard(OrderItemModel item, int index, OrderViewModel vm) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
@@ -213,7 +217,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    item.name,
+                    item.productName,
                     style: GoogleFonts.spaceGrotesk(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -225,12 +229,12 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: item.currentStock < item.threshold
-                        ? AppColor.primary.withOpacity(0.1)
-                        : AppColor.success.withOpacity(0.1),
+                        ? AppColor.primary.withValues(alpha: 0.1)
+                        : AppColor.success.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    "Stock: ${item.currentStock} ${item.unit}",
+                    "Stock: ${item.currentStock} units",
                     style: GoogleFonts.manrope(
                       fontSize: 12,
                       color: item.currentStock < item.threshold
@@ -243,16 +247,14 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
               ],
             ),
             const SizedBox(height: 12),
-
             Row(
               children: [
-                _buildStatChip("Threshold", "${item.threshold} ${item.unit}", AppColor.secondary),
+                _buildStatChip("Threshold", "${item.threshold} units", AppColor.secondary),
                 const SizedBox(width: 8),
-                _buildStatChip("AI Prediction", "${item.aiPrediction} ${item.unit}", AppColor.tertiary),
+                _buildStatChip("Prediction", "${item.suggestedQuantity} units", AppColor.tertiary),
               ],
             ),
             const SizedBox(height: 12),
-
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -273,11 +275,11 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                     children: [
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            if (item.suggestedQty > 0) {
-                              item.suggestedQty--;
-                            }
-                          });
+                          if (item.finalQuantity > 0) {
+                            setState(() {
+                              item.finalQuantity--;
+                            });
+                          }
                         },
                         child: Container(
                           padding: const EdgeInsets.all(8),
@@ -293,7 +295,9 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                       SizedBox(
                         width: 60,
                         child: TextField(
-                          controller: TextEditingController(text: item.suggestedQty.toString()),
+                          controller: TextEditingController(
+                            text: item.finalQuantity.toString(),
+                          ),
                           textAlign: TextAlign.center,
                           keyboardType: TextInputType.number,
                           style: GoogleFonts.manrope(
@@ -320,7 +324,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                             int? newQty = int.tryParse(value);
                             if (newQty != null && newQty >= 0) {
                               setState(() {
-                                item.suggestedQty = newQty;
+                                item.finalQuantity = newQty;
                               });
                             }
                           },
@@ -330,7 +334,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                       GestureDetector(
                         onTap: () {
                           setState(() {
-                            item.suggestedQty++;
+                            item.finalQuantity++;
                           });
                         },
                         child: Container(
@@ -348,24 +352,6 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                 ],
               ),
             ),
-
-            if (item.currentStock >= item.threshold && item.aiPrediction < item.currentStock)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 14, color: AppColor.success),
-                    const SizedBox(width: 4),
-                    Text(
-                      "Stock sufficient. No need to order.",
-                      style: GoogleFonts.manrope(
-                        fontSize: 12,
-                        color: AppColor.success,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
           ],
         ),
       ),
@@ -376,7 +362,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -401,7 +387,29 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
     );
   }
 
-  void _showExportOptions(List<OrderItem> items) {
+  String _getWeekRange() {
+    DateTime now = DateTime.now();
+    DateTime startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
+    return "Week of ${_formatDate(startOfWeek)} - ${_formatDate(endOfWeek)}";
+  }
+
+  String _formatDate(DateTime date) {
+    return "${date.day}/${date.month}/${date.year}";
+  }
+
+  Future<void> _saveOrder(OrderViewModel vm) async {
+    if (vm.currentOrder == null) return;
+
+    final success = await vm.saveOrder(vm.currentOrder!);
+    if (success && context.mounted) {
+      Fluttertoast.showToast(msg: "Order saved successfully");
+    } else if (context.mounted) {
+      Fluttertoast.showToast(msg: "Failed to save order");
+    }
+  }
+
+  void _showExportOptions(OrderModel order, OrderViewModel vm) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -427,21 +435,21 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                 icon: FontAwesomeIcons.whatsapp,
                 title: "Share via WhatsApp",
                 color: const Color(0xFF25D366),
-                onTap: () => _shareToWhatsApp(items),
+                onTap: () => _shareToWhatsApp(order, vm),
               ),
               const SizedBox(height: 12),
               _buildExportOption(
                 icon: Icons.file_copy,
                 title: "Save as CSV",
                 color: AppColor.primary,
-                onTap: () => _saveAsCSV(items),
+                onTap: () => _saveAsCSV(order, vm),
               ),
               const SizedBox(height: 12),
               _buildExportOption(
                 icon: Icons.copy,
                 title: "Copy to Clipboard",
                 color: AppColor.secondary,
-                onTap: () => _copyToClipboard(items),
+                onTap: () => _copyToClipboard(order, vm),
               ),
               const SizedBox(height: 16),
               TextButton(
@@ -496,85 +504,25 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
     );
   }
 
-  String _getWeekRange() {
-    DateTime now = DateTime.now();
-    DateTime startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-    DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
-    return "Week of ${_formatDate(startOfWeek)} - ${_formatDate(endOfWeek)}";
-  }
-
-  String _formatDate(DateTime date) {
-    return "${date.day}/${date.month}/${date.year}";
-  }
-
-  String _generateOrderText(List<OrderItem> items) {
-    StringBuffer buffer = StringBuffer();
-    buffer.writeln("*SmartShelf Order List*");
-    buffer.writeln(_getWeekRange());
-    buffer.writeln("");
-    for (var item in items) {
-      buffer.writeln("${item.name}: ${item.suggestedQty} ${item.unit}");
-    }
-    buffer.writeln("");
-    buffer.writeln("Generated by SmartShelf App");
-    return buffer.toString();
-  }
-
-  void _shareToWhatsApp(List<OrderItem> items) async {
-    String orderText = _generateOrderText(items);
-    await Share.share(orderText);
+  Future<void> _shareToWhatsApp(OrderModel order, OrderViewModel vm) async {
+    final text = await vm.exportOrderToCSV(order);
+    await Share.share(text);
     Fluttertoast.showToast(msg: "Order list ready to share");
   }
 
-  void _saveAsCSV(List<OrderItem> items) async {
-    List<List<String>> csvData = [
-      ["Product Name", "Current Stock", "Threshold", "AI Prediction", "Suggested Quantity", "Unit"],
-    ];
-
-    for (var item in items) {
-      csvData.add([
-        item.name,
-        item.currentStock.toString(),
-        item.threshold.toString(),
-        item.aiPrediction.toString(),
-        item.suggestedQty.toString(),
-        item.unit,
-      ]);
-    }
-
-    String csv = const ListToCsvConverter().convert(csvData);
+  Future<void> _saveAsCSV(OrderModel order, OrderViewModel vm) async {
+    final csv = await vm.exportOrderToCSV(order);
     final directory = await getTemporaryDirectory();
     final path = "${directory.path}/suggested_order.csv";
     File file = File(path);
     await file.writeAsString(csv);
-
     Fluttertoast.showToast(msg: "CSV saved");
     await Share.shareXFiles([XFile(path)], text: "SmartShelf Order List");
   }
 
-  void _copyToClipboard(List<OrderItem> items) async {
-    String orderText = _generateOrderText(items);
-    await Share.share(orderText);
+  Future<void> _copyToClipboard(OrderModel order, OrderViewModel vm) async {
+    final text = await vm.exportOrderToCSV(order);
+    await Share.share(text);
     Fluttertoast.showToast(msg: "Order list copied");
   }
-}
-
-class OrderItem {
-  String id;
-  String name;
-  int currentStock;
-  int threshold;
-  int aiPrediction;
-  int suggestedQty;
-  String unit;
-
-  OrderItem({
-    required this.id,
-    required this.name,
-    required this.currentStock,
-    required this.threshold,
-    required this.aiPrediction,
-    required this.suggestedQty,
-    required this.unit,
-  });
 }

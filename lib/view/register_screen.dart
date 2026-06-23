@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:smartshelf/login_screen.dart';
-import 'package:smartshelf/otp_screen.dart';
-import 'package:smartshelf/utils/colors.dart';
+import 'package:provider/provider.dart';
+import '../utils/colors.dart';
+import '../viewmodel/auth_viewmodel.dart';
+import 'login_screen.dart';
+import 'otp_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -33,67 +34,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  void handleRegister() async {
-    if (fullNameController.text.isEmpty) {
-      Fluttertoast.showToast(msg: "Please enter your full name");
-      return;
-    }
-
-    if (emailController.text.isEmpty) {
-      Fluttertoast.showToast(msg: "Please enter your email");
-      return;
-    }
-    if (!emailController.text.contains('@')) {
-      Fluttertoast.showToast(msg: "Please enter a valid email");
-      return;
-    }
-
-    if (phoneController.text.isEmpty) {
-      Fluttertoast.showToast(msg: "Please enter your phone number");
-      return;
-    }
-    if (phoneController.text.length != 10) {
-      Fluttertoast.showToast(msg: "Please enter a valid 10-digit phone number");
-      return;
-    }
-
-    if (passwordController.text.isEmpty) {
-      Fluttertoast.showToast(msg: "Please create a password");
-      return;
-    }
-    if (passwordController.text.length < 6) {
-      Fluttertoast.showToast(msg: "Password must be at least 6 characters");
-      return;
-    }
-
-    if (passwordController.text != confirmPasswordController.text) {
-      Fluttertoast.showToast(msg: "Passwords do not match");
-      return;
-    }
-
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setString("fullName", fullNameController.text);
-    await prefs.setString("email", emailController.text);
-    await prefs.setString("phone", phoneController.text);
-    await prefs.setString("password", passwordController.text);
-
-    Fluttertoast.showToast(msg: "Registration Successful! Please verify OTP.");
-
-    if (mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => OTPScreen(
-            phoneNumber: phoneController.text,
-            fromRegister: true,
-          ),
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    final vm = context.watch<AuthViewModel>();
+
     return Scaffold(
       backgroundColor: AppColor.background,
       appBar: AppBar(
@@ -114,7 +58,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 20),
-
                 Center(
                   child: Text(
                     "Create Account",
@@ -125,9 +68,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 12),
-
                 Center(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -141,9 +82,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 40),
-
                 Text(
                   "Full Name",
                   style: GoogleFonts.spaceGrotesk(
@@ -172,9 +111,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   ),
                 ),
-
                 const SizedBox(height: 16),
-
                 Text(
                   "Email Address",
                   style: GoogleFonts.spaceGrotesk(
@@ -204,9 +141,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   ),
                 ),
-
                 const SizedBox(height: 16),
-
                 Text(
                   "Phone Number",
                   style: GoogleFonts.spaceGrotesk(
@@ -254,9 +189,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 16),
-
                 Text(
                   "Password",
                   style: GoogleFonts.spaceGrotesk(
@@ -297,9 +230,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   ),
                 ),
-
                 const SizedBox(height: 16),
-
                 Text(
                   "Confirm Password",
                   style: GoogleFonts.spaceGrotesk(
@@ -340,14 +271,64 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   ),
                 ),
-
                 const SizedBox(height: 24),
-
                 SizedBox(
                   width: double.infinity,
                   height: 50,
-                  child: ElevatedButton(
-                    onPressed: handleRegister,
+                  child: vm.loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : ElevatedButton(
+                    onPressed: () async {
+                      final fullName = fullNameController.text.trim();
+                      final email = emailController.text.trim();
+                      final phone = phoneController.text.trim();
+                      final password = passwordController.text.trim();
+                      final confirmPassword = confirmPasswordController.text.trim();
+
+                      if (fullName.isEmpty) {
+                        Fluttertoast.showToast(msg: "Please enter your full name");
+                        return;
+                      }
+                      if (email.isEmpty || !email.contains('@')) {
+                        Fluttertoast.showToast(msg: "Please enter a valid email");
+                        return;
+                      }
+                      if (phone.isEmpty || phone.length != 10) {
+                        Fluttertoast.showToast(msg: "Please enter a valid 10-digit phone number");
+                        return;
+                      }
+                      if (password.isEmpty || password.length < 6) {
+                        Fluttertoast.showToast(msg: "Password must be at least 6 characters");
+                        return;
+                      }
+                      if (password != confirmPassword) {
+                        Fluttertoast.showToast(msg: "Passwords do not match");
+                        return;
+                      }
+
+                      final success = await vm.registerWithPhone(
+                        phone: phone,
+                        fullName: fullName,
+                        email: email,
+                        password: password,
+                      );
+
+                      if (success && mounted) {
+                        Fluttertoast.showToast(msg: "Registration Successful! Please verify OTP.");
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => OTPScreen(
+                              phoneNumber: phone,
+                              fromRegister: true,
+                              isResetPassword: false,
+                            ),
+                          ),
+                        );
+                      } else if (mounted) {
+                        Fluttertoast.showToast(msg: vm.error ?? "Registration failed");
+                      }
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColor.primary,
                       foregroundColor: AppColor.background,
@@ -365,9 +346,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 30),
-
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -398,8 +377,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 20),
+                if (vm.error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      vm.error!,
+                      style: GoogleFonts.manrope(
+                        color: AppColor.error,
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
               ],
             ),
           ),

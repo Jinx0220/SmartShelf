@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:smartshelf/AIpredictions_screen.dart';
-import 'package:smartshelf/dashboard_screen.dart';
-import 'package:smartshelf/productlist_screen.dart';
-import 'package:smartshelf/logsale.dart';
-
-import 'package:smartshelf/settings.dart';
-import 'package:smartshelf/utils/colors.dart';
+import 'package:smartshelf/view/AIpredictions_screen.dart';
+import '../utils/colors.dart';
+import 'priority_dashboard_screen.dart';
+import 'product_list_screen.dart';
+import 'log_sale_screen.dart';
+import 'settings_screen.dart';
+import 'sales_history_screen.dart';  // ← ADD THIS IMPORT
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -25,11 +25,25 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     super.dispose();
   }
 
+  // OPTION 1: Replace PREDICTIONS with SALES HISTORY (if you want 5 tabs total)
+  // final List<Widget> _screens = [
+  //   const PriorityDashboardScreen(),
+  //   const ProductListScreen(),
+  //   const LogSaleScreen(),
+  //   const SalesHistoryScreen(),  // ← REPLACED AI Predictions
+  //   const SettingsScreen(),
+  // ];
+
+  // OPTION 2: Add as 6th tab (need to increase bottom nav items)
+  // NOTE: BottomNavigationBar only supports up to 5 items by default with type: fixed
+  // For 6 items, you need to use a different approach or remove type: fixed
+
+  // OPTION 3: ADD as a new tab by replacing Settings (if Settings is less used)
   final List<Widget> _screens = [
-    const DashboardScreen(),
+    const PriorityDashboardScreen(),
     const ProductListScreen(),
     const LogSaleScreen(),
-    const AIPredictionsScreen(),
+    const SalesHistoryScreen(),  // ← ADDED - Replaced AI Predictions
     const SettingsScreen(),
   ];
 
@@ -37,7 +51,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     "SmartShelf",
     "Products",
     "Log Sale",
-    "AI Predictions",
+    "Sales History",  // ← CHANGED from "AI Predictions"
     "Settings",
   ];
 
@@ -85,9 +99,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             label: "SALE",
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.auto_graph_outlined),
-            activeIcon: Icon(Icons.auto_graph),
-            label: "PREDICTIONS",
+            icon: Icon(Icons.history),  // ← CHANGED from auto_graph
+            activeIcon: Icon(Icons.history),
+            label: "HISTORY",
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings_outlined),

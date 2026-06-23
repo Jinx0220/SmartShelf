@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:smartshelf/view/navigation_screen.dart';
+import 'package:provider/provider.dart';
 import '../utils/colors.dart';
+import '../viewmodel/auth_viewmodel.dart';
 import 'otp_screen.dart';
 import 'register_screen.dart';
-
+import 'navigation_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -27,113 +27,10 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // ==================== DATA METHODS (Future Firebase Ready) ====================
-
-  Future<Map<String, String?>> _getSavedCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    return {
-      'phone': prefs.getString('phone'),
-      'password': prefs.getString('password'),
-    };
-  }
-
-  Future<void> _saveLoginState(bool isLoggedIn) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool("isLoggedIn", isLoggedIn);
-  }
-
-  Future<void> _clearLoginState() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove("isLoggedIn");
-  }
-
-  // ==================== AUTH METHODS ====================
-
-  Future<void> handleLogin() async {
-    if (phoneController.text.isEmpty || passwordController.text.isEmpty) {
-      Fluttertoast.showToast(msg: "Please enter Phone number and Password");
-      return;
-    }
-
-    final credentials = await _getSavedCredentials();
-    final savedPhone = credentials['phone'];
-    final savedPassword = credentials['password'];
-
-    if (savedPhone == null || savedPassword == null) {
-      Fluttertoast.showToast(msg: "No account Found. Please sign up first");
-      return;
-    }
-
-    if (savedPhone == phoneController.text && savedPassword == passwordController.text) {
-      Fluttertoast.showToast(msg: "Login Successful");
-      await _saveLoginState(true);
-
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
-        );
-      }
-    } else {
-      Fluttertoast.showToast(msg: "Invalid Phone Number or Password");
-    }
-  }
-
-  void showForgotPasswordDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Reset Password',
-          style: GoogleFonts.spaceGrotesk(
-            color: AppColor.neutral,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        content: Text(
-          'Enter your phone number to receive OTP',
-          style: GoogleFonts.manrope(color: Colors.grey.shade600),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.manrope(
-                color: AppColor.secondary,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => OTPScreen(
-                    phoneNumber: phoneController.text,
-                    fromRegister: false,
-                  ),
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColor.primary,
-            ),
-            child: Text(
-              'Send OTP',
-              style: GoogleFonts.manrope(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final vm = context.watch<AuthViewModel>();
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,
@@ -149,7 +46,6 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 40),
-
               Center(
                 child: Text(
                   "Welcome back",
@@ -173,7 +69,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 50),
-
               Text(
                 "Phone Number",
                 style: GoogleFonts.spaceGrotesk(
@@ -182,7 +77,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-
               Container(
                 decoration: BoxDecoration(
                   color: Colors.grey.shade100,
@@ -221,9 +115,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 20),
-
               Text(
                 "Password",
                 style: GoogleFonts.spaceGrotesk(
@@ -232,7 +124,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-
               TextField(
                 controller: passwordController,
                 obscureText: !isPasswordVisible,
@@ -264,13 +155,22 @@ class _LoginScreenState extends State<LoginScreen> {
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                 ),
               ),
-
               const SizedBox(height: 10),
-
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: showForgotPasswordDialog,
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => OTPScreen(
+                          phoneNumber: phoneController.text,
+                          fromRegister: false,
+                          isResetPassword: true,
+                        ),
+                      ),
+                    );
+                  },
                   child: Text(
                     "Forgot Password?",
                     style: GoogleFonts.manrope(
@@ -280,14 +180,33 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 30),
-
               SizedBox(
                 width: double.infinity,
                 height: 50,
-                child: ElevatedButton(
-                  onPressed: handleLogin,
+                child: vm.loading
+                    ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                    : ElevatedButton(
+                  onPressed: () async {
+                    final phone = phoneController.text.trim();
+                    final password = passwordController.text.trim();
+
+                    if (phone.isEmpty || password.isEmpty) {
+                      Fluttertoast.showToast(msg: "Please enter Phone and Password");
+                      return;
+                    }
+
+                    final success = await vm.loginWithPhone(phone, password);
+                    if (success && mounted) {
+                      Fluttertoast.showToast(msg: "Login Successful");
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
+                      );
+                    } else if (mounted) {
+                      Fluttertoast.showToast(msg: vm.error ?? "Login failed");
+                    }
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColor.primary,
                     foregroundColor: AppColor.background,
@@ -305,9 +224,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 30),
-
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -336,8 +253,19 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
               ),
-
               const SizedBox(height: 20),
+              if (vm.error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    vm.error!,
+                    style: GoogleFonts.manrope(
+                      color: AppColor.error,
+                      fontSize: 14,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
             ],
           ),
         ),

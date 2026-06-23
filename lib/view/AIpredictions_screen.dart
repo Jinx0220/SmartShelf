@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
 import '../utils/colors.dart';
+import '../viewmodel/product_viewmodel.dart';
+import '../viewmodel/sale_viewmodel.dart';
+import '../viewmodel/prediction_viewmodel.dart';
+import '../model/product_model.dart';
+import '../model/sale_model.dart';
+import '../model/prediction_model.dart';
 
 class AIPredictionsScreen extends StatefulWidget {
   const AIPredictionsScreen({super.key});
@@ -13,133 +18,39 @@ class AIPredictionsScreen extends StatefulWidget {
 }
 
 class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
-  List<PredictionItem> predictions = [];
-  bool _isLoading = true;
-
   @override
   void initState() {
     super.initState();
-    _loadData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+    });
   }
 
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+    final productVm = context.read<ProductViewModel>();
+    final saleVm = context.read<SaleViewModel>();
+    final predictionVm = context.read<PredictionViewModel>();
 
-    final prefs = await SharedPreferences.getInstance();
+    await productVm.getAllProduct();
+    await saleVm.getAllSales();
 
-    // Load products
-    final String? productsJson = prefs.getString('products');
-    // Load sales
-    final String? salesJson = prefs.getString('sales');
+    final products = productVm.allProducts ?? [];
+    final sales = saleVm.sales ?? [];
 
-    List<Product> products = [];
-    List<Sale> sales = [];
-
-    if (productsJson != null) {
-      List<dynamic> decoded = json.decode(productsJson);
-      products = decoded.map((e) => Product.fromJson(e)).toList();
+    if (products.isNotEmpty) {
+      await predictionVm.generatePredictions(products, sales, 0);
     }
-
-    if (salesJson != null) {
-      List<dynamic> decoded = json.decode(salesJson);
-      sales = decoded.map((e) => Sale.fromJson(e)).toList();
-    }
-
-    // Generate predictions for each product
-    predictions = [];
-    for (var product in products) {
-      final productSales = sales.where((s) => s.productId == product.id).toList();
-      final prediction = _calculatePrediction(product, productSales);
-      predictions.add(prediction);
-    }
-
-    // Load saved manual adjustments
-    final String? savedPredictionsJson = prefs.getString('manual_predictions');
-    if (savedPredictionsJson != null) {
-      Map<String, dynamic> saved = json.decode(savedPredictionsJson);
-      for (var pred in predictions) {
-        if (saved.containsKey(pred.productId)) {
-          pred.predictedQuantity = saved[pred.productId];
-        }
-      }
-    }
-
-    setState(() => _isLoading = false);
-  }
-
-  PredictionItem _calculatePrediction(Product product, List<Sale> sales) {
-    if (sales.length < 7) {
-      return PredictionItem(
-        productId: product.id,
-        name: product.name,
-        currentStock: product.stock,
-        predictedQuantity: 0,
-        confidence: "Insufficient",
-        history: sales.map((s) => s.quantity).toList(),
-      );
-    }
-
-    // Group sales by day of week
-    Map<int, List<int>> salesByWeekday = {};
-    for (var sale in sales) {
-      int weekday = sale.timestamp.weekday;
-      salesByWeekday[weekday] ??= [];
-      salesByWeekday[weekday]!.add(sale.quantity);
-    }
-
-    // Calculate average for each weekday
-    Map<int, double> avgByWeekday = {};
-    for (var entry in salesByWeekday.entries) {
-      if (entry.value.length >= 4) {
-        avgByWeekday[entry.key] = entry.value.take(4).reduce((a, b) => a + b) / 4;
-      } else if (entry.value.isNotEmpty) {
-        avgByWeekday[entry.key] = entry.value.reduce((a, b) => a + b) / entry.value.length;
-      }
-    }
-
-    // Sum for next 7 days
-    double totalPrediction = 0;
-    for (int day = 1; day <= 7; day++) {
-      totalPrediction += avgByWeekday[day] ?? 0;
-    }
-
-    int predictedQty = totalPrediction.round();
-
-    // Determine confidence
-    String confidence;
-    if (sales.length >= 28) {
-      confidence = "High";
-    } else if (sales.length >= 14) {
-      confidence = "Medium";
-    } else {
-      confidence = "Low";
-    }
-
-    return PredictionItem(
-      productId: product.id,
-      name: product.name,
-      currentStock: product.stock,
-      predictedQuantity: predictedQty > 0 ? predictedQty : 0,
-      confidence: confidence,
-      history: sales.map((s) => s.quantity).toList(),
-    );
-  }
-
-  Future<void> _saveManualPrediction(String productId, int newValue) async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? savedJson = prefs.getString('manual_predictions');
-    Map<String, dynamic> saved = {};
-
-    if (savedJson != null) {
-      saved = json.decode(savedJson);
-    }
-
-    saved[productId] = newValue;
-    await prefs.setString('manual_predictions', json.encode(saved));
   }
 
   @override
   Widget build(BuildContext context) {
+    final predictionVm = context.watch<PredictionViewModel>();
+    final productVm = context.watch<ProductViewModel>();
+    final saleVm = context.watch<SaleViewModel>();
+
+    final isLoading = predictionVm.loading || productVm.loading || saleVm.loading;
+    final predictions = predictionVm.predictions ?? [];
+
     return Scaffold(
       backgroundColor: AppColor.background,
       appBar: AppBar(
@@ -154,9 +65,41 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
         backgroundColor: AppColor.primary,
         elevation: 0,
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: _loadData,
+          ),
+        ],
       ),
-      body: _isLoading
+      body: isLoading
           ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
+          : predictions.isEmpty
+          ? Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.auto_graph, size: 64, color: AppColor.secondary),
+            const SizedBox(height: 16),
+            Text(
+              "No Predictions Yet",
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColor.neutral,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Add products and log sales to generate predictions",
+              style: GoogleFonts.manrope(
+                fontSize: 14,
+                color: AppColor.secondary,
+              ),
+            ),
+          ],
+        ),
+      )
           : Column(
         children: [
           Container(
@@ -184,7 +127,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
                 itemCount: predictions.length,
                 itemBuilder: (context, index) {
                   final item = predictions[index];
-                  return _buildPredictionCard(item);
+                  return _buildPredictionCard(item, predictionVm);
                 },
               ),
             ),
@@ -194,7 +137,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
     );
   }
 
-  Widget _buildPredictionCard(PredictionItem item) {
+  Widget _buildPredictionCard(PredictionModel item, PredictionViewModel vm) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -218,7 +161,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
             children: [
               Expanded(
                 child: Text(
-                  item.name,
+                  item.productName,
                   style: GoogleFonts.spaceGrotesk(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -226,17 +169,16 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
                   ),
                 ),
               ),
-              _buildConfidenceBadge(item.confidence),
+              _buildConfidenceBadge(item.confidenceLevel),
             ],
           ),
           const SizedBox(height: 14),
-
           Row(
             children: [
               Icon(Icons.inventory_2_outlined, size: 16, color: AppColor.secondary),
               const SizedBox(width: 6),
               Text(
-                "Current Stock: ${item.currentStock} units",
+                "Predicted: ${item.predictedQuantity} units",
                 style: GoogleFonts.manrope(
                   fontSize: 13,
                   color: AppColor.secondary,
@@ -245,7 +187,6 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
             ],
           ),
           const SizedBox(height: 12),
-
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -280,7 +221,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
                     ),
                     const SizedBox(width: 12),
                     InkWell(
-                      onTap: () => _showAdjustDialog(item),
+                      onTap: () => _showAdjustDialog(item, vm),
                       child: Container(
                         padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
@@ -296,8 +237,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
             ),
           ),
           const SizedBox(height: 12),
-
-          if (item.confidence != "Insufficient" && item.history.isNotEmpty)
+          if (item.confidenceLevel != "Insufficient")
             TextButton.icon(
               onPressed: () => _showWhyDialog(item),
               icon: Icon(Icons.help_outline, size: 16, color: AppColor.tertiary),
@@ -311,7 +251,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
               ),
               style: TextButton.styleFrom(padding: EdgeInsets.zero),
             ),
-          if (item.confidence == "Insufficient")
+          if (item.confidenceLevel == "Insufficient")
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Row(
@@ -373,12 +313,9 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
     );
   }
 
-  void _showWhyDialog(PredictionItem item) {
-    List<int> history = item.history.length > 4
-        ? item.history.reversed.take(4).toList().reversed.toList()
-        : item.history;
-
-    int average = history.isEmpty ? 0 : history.reduce((a, b) => a + b) ~/ history.length;
+  void _showWhyDialog(PredictionModel item) {
+    final explanation = item.explanationData;
+    final weeklyAverages = explanation['weeklyAverages'] as Map<int, double>?;
 
     showDialog(
       context: context,
@@ -397,32 +334,27 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Last ${history.length} weeks of sales for ${item.name}:",
+              "Based on last 4 weeks of sales data",
               style: GoogleFonts.manrope(fontSize: 13, color: AppColor.secondary),
             ),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: history.asMap().entries.map((entry) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColor.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
+            if (weeklyAverages != null)
+              ...weeklyAverages.entries.map((entry) {
+                final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        "Week ${entry.key + 1}",
-                        style: GoogleFonts.manrope(fontSize: 11, color: AppColor.secondary),
+                        days[entry.key - 1],
+                        style: GoogleFonts.manrope(fontSize: 13),
                       ),
-                      const SizedBox(height: 4),
                       Text(
-                        "${entry.value} units",
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                        "${entry.value.toStringAsFixed(1)} units avg",
+                        style: GoogleFonts.manrope(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
                           color: AppColor.primary,
                         ),
                       ),
@@ -430,21 +362,24 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
                   ),
                 );
               }).toList(),
-            ),
-            const SizedBox(height: 20),
+            if (!explanation.containsKey('weeklyAverages'))
+              Text(
+                explanation['message'] ?? 'No data available',
+                style: GoogleFonts.manrope(fontSize: 13, color: AppColor.secondary),
+              ),
+            const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.grey.shade50,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade200),
               ),
               child: Row(
                 children: [
                   Icon(Icons.calculate, size: 18, color: AppColor.primary),
                   const SizedBox(width: 8),
                   Text(
-                    "Average: $average units/week",
+                    "Method: ${explanation['method'] ?? 'Moving Average'}",
                     style: GoogleFonts.manrope(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -469,8 +404,10 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
     );
   }
 
-  void _showAdjustDialog(PredictionItem item) {
-    TextEditingController controller = TextEditingController(text: item.predictedQuantity.toString());
+  void _showAdjustDialog(PredictionModel item, PredictionViewModel vm) {
+    TextEditingController controller = TextEditingController(
+      text: item.predictedQuantity.toString(),
+    );
 
     showDialog(
       context: context,
@@ -489,7 +426,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Change prediction for ${item.name}",
+              "Change prediction for ${item.productName}",
               style: GoogleFonts.manrope(fontSize: 14, color: AppColor.secondary),
             ),
             const SizedBox(height: 20),
@@ -528,12 +465,16 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
           ElevatedButton(
             onPressed: () async {
               int newValue = int.tryParse(controller.text) ?? item.predictedQuantity;
-              setState(() {
-                item.predictedQuantity = newValue;
-              });
-              await _saveManualPrediction(item.productId, newValue);
-              Navigator.pop(context);
-              Fluttertoast.showToast(msg: "Prediction updated to $newValue units");
+              if (newValue < 0) newValue = 0;
+
+              final success = await vm.updatePrediction(item.productId, newValue);
+              if (success && mounted) {
+                Navigator.pop(context);
+                Fluttertoast.showToast(msg: "Prediction updated to $newValue units");
+              } else if (mounted) {
+                Navigator.pop(context);
+                Fluttertoast.showToast(msg: "Failed to update prediction");
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColor.primary,
@@ -548,99 +489,4 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
       ),
     );
   }
-}
-
-// Temporary models
-class PredictionItem {
-  final String productId;
-  final String name;
-  final int currentStock;
-  int predictedQuantity;
-  final String confidence;
-  final List<int> history;
-
-  PredictionItem({
-    required this.productId,
-    required this.name,
-    required this.currentStock,
-    required this.predictedQuantity,
-    required this.confidence,
-    required this.history,
-  });
-}
-
-class Product {
-  final String id;
-  final String name;
-  final int stock;
-  final int threshold;
-  final int price;
-  final String category;
-  final int? oldPrice;
-
-  Product({
-    required this.id,
-    required this.name,
-    required this.stock,
-    required this.threshold,
-    required this.price,
-    required this.category,
-    this.oldPrice,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'stock': stock,
-    'threshold': threshold,
-    'price': price,
-    'category': category,
-    'oldPrice': oldPrice,
-  };
-
-  factory Product.fromJson(Map<String, dynamic> json) => Product(
-    id: json['id'],
-    name: json['name'],
-    stock: json['stock'],
-    threshold: json['threshold'],
-    price: json['price'],
-    category: json['category'],
-    oldPrice: json['oldPrice'],
-  );
-}
-
-class Sale {
-  final String id;
-  final String productId;
-  final String productName;
-  final int quantity;
-  final int totalPrice;
-  final DateTime timestamp;
-
-  Sale({
-    required this.id,
-    required this.productId,
-    required this.productName,
-    required this.quantity,
-    required this.totalPrice,
-    required this.timestamp,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'productId': productId,
-    'productName': productName,
-    'quantity': quantity,
-    'totalPrice': totalPrice,
-    'timestamp': timestamp.toIso8601String(),
-  };
-
-  factory Sale.fromJson(Map<String, dynamic> json) => Sale(
-    id: json['id'],
-    productId: json['productId'],
-    productName: json['productName'],
-    quantity: json['quantity'],
-    totalPrice: json['totalPrice'],
-    timestamp: DateTime.parse(json['timestamp']),
-  );
 }

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
 import '../utils/colors.dart';
 import '../utils/formatters.dart';
-import 'product_detail_screen.dart';  // ← ADD THIS IMPORT
+import '../viewmodel/product_viewmodel.dart';
+import '../model/product_model.dart';
+import 'product_detail_screen.dart';
 
 class ProductListScreen extends StatefulWidget {
   const ProductListScreen({super.key});
@@ -17,189 +18,32 @@ class ProductListScreen extends StatefulWidget {
 class _ProductListScreenState extends State<ProductListScreen> {
   String _searchQuery = '';
   String _selectedCategory = 'All';
-  List<Product> _products = [];
-  bool _isLoading = true;
-
-  final List<String> _categories = ['All', 'Grocery', 'Dairy', 'Beverages', 'Snacks'];
 
   @override
   void initState() {
     super.initState();
-    _loadProducts();
-  }
-
-  // ==================== DATA METHODS ====================
-
-  Future<List<Product>> _loadProductsFromStorage() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? productsJson = prefs.getString('products');
-
-    if (productsJson != null && productsJson.isNotEmpty) {
-      try {
-        List<dynamic> decoded = json.decode(productsJson);
-        return decoded.map((e) => Product.fromJson(e)).toList();
-      } catch (e) {
-        return [];
-      }
-    }
-    return [];
-  }
-
-  Future<void> _saveProductsToStorage(List<Product> products) async {
-    final prefs = await SharedPreferences.getInstance();
-    final String productsJson = json.encode(products.map((e) => e.toJson()).toList());
-    await prefs.setString('products', productsJson);
-  }
-
-  // ==================== PRODUCT CRUD METHODS ====================
-
-  Future<void> _loadProducts() async {
-    setState(() => _isLoading = true);
-    _products = await _loadProductsFromStorage();
-
-    if (_products.isEmpty) {
-      await _loadDemoData();
-    }
-
-    setState(() => _isLoading = false);
-  }
-
-  Future<void> _loadDemoData() async {
-    _products = [
-      Product(
-        id: '1',
-        name: 'Basmati Rice',
-        stock: 5,
-        threshold: 10,
-        price: 300,
-        category: 'Grocery',
-        oldPrice: 300,
-      ),
-      Product(
-        id: '2',
-        name: 'Momo Chutney',
-        stock: 8,
-        threshold: 5,
-        price: 130,
-        category: 'Snacks',
-        oldPrice: 100,
-      ),
-      Product(
-        id: '3',
-        name: 'Cooking Oil',
-        stock: 2,
-        threshold: 8,
-        price: 180,
-        category: 'Grocery',
-        oldPrice: 180,
-      ),
-      Product(
-        id: '4',
-        name: 'Milk 1L',
-        stock: 0,
-        threshold: 10,
-        price: 90,
-        category: 'Dairy',
-        oldPrice: 90,
-      ),
-      Product(
-        id: '5',
-        name: 'Wheat Flour',
-        stock: 2,
-        threshold: 10,
-        price: 60,
-        category: 'Grocery',
-        oldPrice: 60,
-      ),
-      Product(
-        id: '6',
-        name: 'Tea Leaves',
-        stock: 1,
-        threshold: 8,
-        price: 120,
-        category: 'Beverages',
-        oldPrice: 120,
-      ),
-      Product(
-        id: '7',
-        name: 'Salt',
-        stock: 22,
-        threshold: 5,
-        price: 20,
-        category: 'Grocery',
-        oldPrice: 20,
-      ),
-      Product(
-        id: '8',
-        name: 'Sugar',
-        stock: 18,
-        threshold: 5,
-        price: 85,
-        category: 'Grocery',
-        oldPrice: 85,
-      ),
-    ];
-    await _saveProductsToStorage(_products);
-  }
-
-  Future<void> _addProduct(Product product) async {
-    setState(() {
-      _products.add(product);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ProductViewModel>().getAllProduct();
     });
-    await _saveProductsToStorage(_products);
-    Fluttertoast.showToast(msg: 'Product added successfully');
   }
-
-  Future<void> _updateProduct(Product updatedProduct) async {
-    setState(() {
-      final index = _products.indexWhere((p) => p.id == updatedProduct.id);
-      if (index != -1) {
-        _products[index] = updatedProduct;
-      }
-    });
-    await _saveProductsToStorage(_products);
-    Fluttertoast.showToast(msg: 'Product updated successfully');
-  }
-
-  Future<void> _deleteProduct(String productId) async {
-    setState(() {
-      _products.removeWhere((p) => p.id == productId);
-    });
-    await _saveProductsToStorage(_products);
-    Fluttertoast.showToast(msg: 'Product deleted successfully');
-  }
-
-  List<Product> _getFilteredProducts() {
-    var filtered = _products;
-
-    if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((p) =>
-          p.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
-    }
-
-    if (_selectedCategory != 'All') {
-      filtered = filtered.where((p) => p.category == _selectedCategory).toList();
-    }
-
-    return filtered;
-  }
-
-  // ==================== NAVIGATION METHODS ====================
-
-  void _navigateToProductDetail(Product product) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ProductDetailScreen(productId: product.id),
-      ),
-    ).then((_) => _loadProducts()); // Refresh when coming back
-  }
-
-  // ==================== UI METHODS ====================
 
   @override
   Widget build(BuildContext context) {
-    final products = _getFilteredProducts();
+    final vm = context.watch<ProductViewModel>();
+    final products = vm.allProducts ?? [];
+
+    // Get unique categories
+    final categories = ['All', ...products.map((p) => p.category ?? '').toSet().where((c) => c.isNotEmpty)];
+
+    // Filter products
+    var filteredProducts = products;
+    if (_searchQuery.isNotEmpty) {
+      filteredProducts = filteredProducts.where((p) =>
+          (p.name ?? '').toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+    }
+    if (_selectedCategory != 'All') {
+      filteredProducts = filteredProducts.where((p) => p.category == _selectedCategory).toList();
+    }
 
     return Scaffold(
       backgroundColor: AppColor.background,
@@ -218,11 +62,13 @@ class _ProductListScreenState extends State<ProductListScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.add, color: Colors.white),
-            onPressed: () => _showAddEditProductDialog(),
+            onPressed: () => _showAddEditProductDialog(context, vm),
           ),
         ],
       ),
-      body: Column(
+      body: vm.loading
+          ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
+          : Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
@@ -254,7 +100,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
-              children: _categories.map((category) {
+              children: categories.map((category) {
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: _buildCategoryChip(category),
@@ -264,9 +110,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
           ),
           const SizedBox(height: 16),
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
-                : products.isEmpty
+            child: filteredProducts.isEmpty
                 ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -292,13 +136,16 @@ class _ProductListScreenState extends State<ProductListScreen> {
                 ],
               ),
             )
-                : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: products.length,
-              itemBuilder: (context, index) {
-                final product = products[index];
-                return _buildProductCard(product);
-              },
+                : RefreshIndicator(
+              onRefresh: () => vm.getAllProduct(),
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: filteredProducts.length,
+                itemBuilder: (context, index) {
+                  final product = filteredProducts[index];
+                  return _buildProductCard(context, product, vm);
+                },
+              ),
             ),
           ),
         ],
@@ -333,11 +180,18 @@ class _ProductListScreenState extends State<ProductListScreen> {
     );
   }
 
-  Widget _buildProductCard(Product product) {
+  Widget _buildProductCard(BuildContext context, ProductModel product, ProductViewModel vm) {
     final isLowStock = product.isLowStock;
 
     return GestureDetector(
-      onTap: () => _navigateToProductDetail(product),  // ← TAP TO VIEW DETAILS
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProductDetailScreen(productId: product.id ?? ''),
+          ),
+        ).then((_) => vm.getAllProduct());
+      },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(14),
@@ -355,7 +209,6 @@ class _ProductListScreenState extends State<ProductListScreen> {
         ),
         child: Row(
           children: [
-            // Product Icon
             Container(
               width: 55,
               height: 55,
@@ -370,14 +223,12 @@ class _ProductListScreenState extends State<ProductListScreen> {
               ),
             ),
             const SizedBox(width: 14),
-
-            // Product Info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    product.name,
+                    product.name ?? '',
                     style: GoogleFonts.spaceGrotesk(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -386,7 +237,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Stock: ${product.stock} | Price: ${formatCurrency(product.price)}',
+                    'Stock: ${product.stock ?? 0} | Price: ${formatCurrency((product.price ?? 0).toInt())}',
                     style: GoogleFonts.manrope(
                       fontSize: 12,
                       color: AppColor.secondary,
@@ -395,8 +246,6 @@ class _ProductListScreenState extends State<ProductListScreen> {
                 ],
               ),
             ),
-
-            // Stock Status Badge
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
@@ -414,15 +263,13 @@ class _ProductListScreenState extends State<ProductListScreen> {
                 ),
               ),
             ),
-
-            // Menu Button (Edit/Delete)
             PopupMenuButton<String>(
               icon: Icon(Icons.more_vert, color: AppColor.secondary),
               onSelected: (value) {
                 if (value == 'edit') {
-                  _showAddEditProductDialog(product: product);
+                  _showAddEditProductDialog(context, vm, product: product);
                 } else if (value == 'delete') {
-                  _showDeleteConfirmation(product);
+                  _showDeleteConfirmation(context, product, vm);
                 }
               },
               itemBuilder: (context) => [
@@ -436,14 +283,19 @@ class _ProductListScreenState extends State<ProductListScreen> {
     );
   }
 
-  void _showAddEditProductDialog({Product? product}) {
+  void _showAddEditProductDialog(
+      BuildContext context,
+      ProductViewModel vm, {
+        ProductModel? product,
+      }) {
     final isEditing = product != null;
     final nameController = TextEditingController(text: product?.name ?? '');
-    final priceController = TextEditingController(text: product?.price.toString() ?? '');
-    final stockController = TextEditingController(text: product?.stock.toString() ?? '');
-    final thresholdController = TextEditingController(text: product?.threshold.toString() ?? '');
+    final priceController = TextEditingController(text: product?.price?.toString() ?? '');
+    final stockController = TextEditingController(text: product?.stock?.toString() ?? '');
+    final thresholdController = TextEditingController(text: product?.threshold?.toString() ?? '');
     String selectedCategory = product?.category ?? 'Grocery';
-    final List<String> categories = ['Grocery', 'Dairy', 'Beverages', 'Snacks'];
+
+    final categories = ['Grocery', 'Dairy', 'Beverages', 'Snacks', 'Electronics', 'Clothing'];
 
     showDialog(
       context: context,
@@ -554,7 +406,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
           ElevatedButton(
             onPressed: () async {
               final name = nameController.text.trim();
-              final price = int.tryParse(priceController.text);
+              final price = double.tryParse(priceController.text);
               final stock = int.tryParse(stockController.text);
               final threshold = int.tryParse(thresholdController.text);
 
@@ -576,27 +428,27 @@ class _ProductListScreenState extends State<ProductListScreen> {
               }
 
               if (isEditing) {
-                final updatedProduct = Product(
+                final updatedProduct = ProductModel(
                   id: product!.id,
                   name: name,
+                  price: price,
                   stock: stock,
                   threshold: threshold,
-                  price: price,
                   category: selectedCategory,
                   oldPrice: product.oldPrice ?? price,
                 );
-                await _updateProduct(updatedProduct);
+                await vm.updateProduct(updatedProduct);
               } else {
-                final newProduct = Product(
+                final newProduct = ProductModel(
                   id: DateTime.now().millisecondsSinceEpoch.toString(),
                   name: name,
+                  price: price,
                   stock: stock,
                   threshold: threshold,
-                  price: price,
                   category: selectedCategory,
                   oldPrice: price,
                 );
-                await _addProduct(newProduct);
+                await vm.addProduct(newProduct);
               }
 
               if (mounted) Navigator.pop(context);
@@ -615,7 +467,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
     );
   }
 
-  void _showDeleteConfirmation(Product product) {
+  void _showDeleteConfirmation(BuildContext context, ProductModel product, ProductViewModel vm) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -642,7 +494,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              await _deleteProduct(product.id);
+              await vm.deleteproduct(product.id ?? '');
               if (mounted) Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(
@@ -658,48 +510,4 @@ class _ProductListScreenState extends State<ProductListScreen> {
       ),
     );
   }
-}
-
-// ==================== PRODUCT MODEL ====================
-class Product {
-  final String id;
-  final String name;
-  int stock;
-  final int threshold;
-  final int price;
-  final String category;
-  final int? oldPrice;
-
-  Product({
-    required this.id,
-    required this.name,
-    required this.stock,
-    required this.threshold,
-    required this.price,
-    required this.category,
-    this.oldPrice,
-  });
-
-  bool get isLowStock => stock <= threshold;
-  bool get isOutOfStock => stock == 0;
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'stock': stock,
-    'threshold': threshold,
-    'price': price,
-    'category': category,
-    'oldPrice': oldPrice,
-  };
-
-  factory Product.fromJson(Map<String, dynamic> json) => Product(
-    id: json['id'] ?? '',
-    name: json['name'] ?? '',
-    stock: json['stock'] ?? 0,
-    threshold: json['threshold'] ?? 0,
-    price: json['price'] ?? 0,
-    category: json['category'] ?? '',
-    oldPrice: json['oldPrice'] ?? json['price'],
-  );
 }

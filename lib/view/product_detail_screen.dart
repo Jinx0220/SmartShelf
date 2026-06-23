@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
 import '../utils/colors.dart';
 import '../utils/formatters.dart';
-import '../dialogs/confirmation_dialog.dart';
+import '../viewmodel/product_viewmodel.dart';
+import '../viewmodel/sale_viewmodel.dart';
+import '../model/product_model.dart';
+import '../model/sale_model.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final String productId;
@@ -21,54 +23,29 @@ class ProductDetailScreen extends StatefulWidget {
 }
 
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
-  Product? _product;
-  List<Sale> _productSales = [];
-  bool _isLoading = true;
-
   @override
   void initState() {
     super.initState();
-    _loadData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ProductViewModel>().getProductById(widget.productId);
+      context.read<SaleViewModel>().getSalesForProduct(widget.productId);
+    });
   }
 
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-
-    final prefs = await SharedPreferences.getInstance();
-
-    // Load product
-    final String? productsJson = prefs.getString('products');
-    if (productsJson != null && productsJson.isNotEmpty) {
-      List<dynamic> decoded = json.decode(productsJson);
-      List<Product> products = decoded.map((e) => Product.fromJson(e)).toList();
-      _product = products.firstWhere((p) => p.id == widget.productId);
-    }
-
-    // Load sales for this product
-    final String? salesJson = prefs.getString('sales');
-    if (salesJson != null && salesJson.isNotEmpty) {
-      List<dynamic> decoded = json.decode(salesJson);
-      List<Sale> allSales = decoded.map((e) => Sale.fromJson(e)).toList();
-      _productSales = allSales
-          .where((s) => s.productId == widget.productId)
-          .toList()
-        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-    }
-
-    setState(() => _isLoading = false);
-  }
-
-  List<FlSpot> _getSalesSpots() {
-    if (_productSales.isEmpty) return [];
+  List<FlSpot> _getSalesSpots(List<SaleModel> sales) {
+    if (sales.isEmpty) return [];
 
     // Group by day and sum quantities
     Map<DateTime, int> dailySales = {};
-    for (var sale in _productSales) {
-      final day = DateTime(sale.timestamp.year, sale.timestamp.month, sale.timestamp.day);
+    for (var sale in sales) {
+      final day = DateTime(
+        sale.timestamp.year,
+        sale.timestamp.month,
+        sale.timestamp.day,
+      );
       dailySales[day] = (dailySales[day] ?? 0) + sale.quantity;
     }
 
-    // Sort dates and create spots
     final sortedDates = dailySales.keys.toList()..sort();
     if (sortedDates.isEmpty) return [];
 
@@ -79,39 +56,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     return spots;
   }
 
-  Future<void> _editProduct() async {
-    // Navigate to edit product (using add/edit dialog from product_list_screen)
-    // For now, show a toast
-    Fluttertoast.showToast(msg: "Edit functionality coming soon");
-  }
-
-  Future<void> _deleteProduct() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    // Check if product has sales
-    if (_productSales.isNotEmpty) {
-      Fluttertoast.showToast(msg: "Cannot delete product with sales history");
-      return;
-    }
-
-    // Load all products and remove this one
-    final String? productsJson = prefs.getString('products');
-    if (productsJson != null && productsJson.isNotEmpty) {
-      List<dynamic> decoded = json.decode(productsJson);
-      List<Product> products = decoded.map((e) => Product.fromJson(e)).toList();
-      products.removeWhere((p) => p.id == widget.productId);
-
-      final String updatedJson = json.encode(products.map((e) => e.toJson()).toList());
-      await prefs.setString('products', updatedJson);
-
-      Fluttertoast.showToast(msg: "Product deleted");
-      if (mounted) Navigator.pop(context);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    final productVm = context.watch<ProductViewModel>();
+    final saleVm = context.watch<SaleViewModel>();
+
+    final product = productVm.product;
+    final sales = saleVm.productSales ?? [];
+
+    if (productVm.loading) {
       return Scaffold(
         appBar: AppBar(
           title: Text("Product Details", style: GoogleFonts.spaceGrotesk(color: Colors.white)),
@@ -121,7 +74,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       );
     }
 
-    if (_product == null) {
+    if (product == null) {
       return Scaffold(
         appBar: AppBar(
           title: Text("Product Details", style: GoogleFonts.spaceGrotesk(color: Colors.white)),
@@ -136,11 +89,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       );
     }
 
+    final isLowStock = product.isLowStock;
+
     return Scaffold(
       backgroundColor: AppColor.background,
       appBar: AppBar(
         title: Text(
-          _product!.name,
+          product.name ?? '',
           style: GoogleFonts.spaceGrotesk(
             fontSize: 20,
             fontWeight: FontWeight.w600,
@@ -153,11 +108,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.edit, color: Colors.white),
-            onPressed: _editProduct,
+            onPressed: () => _showEditDialog(context, product, productVm),
           ),
           IconButton(
             icon: const Icon(Icons.delete, color: Colors.white),
-            onPressed: () => _showDeleteConfirmation(),
+            onPressed: () => _showDeleteConfirmation(context, product, productVm),
           ),
         ],
       ),
@@ -189,17 +144,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: _product!.isLowStock
+                          color: isLowStock
                               ? AppColor.error.withValues(alpha: 0.1)
                               : AppColor.success.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
-                          _product!.isLowStock ? "Low Stock" : "In Stock",
+                          isLowStock ? "Low Stock" : "In Stock",
                           style: GoogleFonts.manrope(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: _product!.isLowStock ? AppColor.error : AppColor.success,
+                            color: isLowStock ? AppColor.error : AppColor.success,
                           ),
                         ),
                       ),
@@ -207,11 +162,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    "${_product!.stock} units",
+                    "${product.stock ?? 0} units",
                     style: GoogleFonts.spaceGrotesk(
                       fontSize: 36,
                       fontWeight: FontWeight.bold,
-                      color: _product!.isLowStock ? AppColor.error : AppColor.success,
+                      color: isLowStock ? AppColor.error : AppColor.success,
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -220,15 +175,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _buildInfoChip("Price", formatCurrency(_product!.price)),
-                      _buildInfoChip("Threshold", "${_product!.threshold} units"),
-                      _buildInfoChip("Category", _product!.category),
+                      _buildInfoChip("Price", formatCurrency((product.price ?? 0).toInt())),
+                      _buildInfoChip("Threshold", "${product.threshold ?? 0} units"),
+                      _buildInfoChip("Category", product.category ?? 'N/A'),
                     ],
                   ),
                 ],
               ),
             ),
-
             const SizedBox(height: 16),
 
             // Sales Chart
@@ -251,7 +205,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (_productSales.isEmpty)
+                  if (sales.isEmpty)
                     Center(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 40),
@@ -272,10 +226,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                               sideTitles: SideTitles(
                                 showTitles: true,
                                 getTitlesWidget: (value, meta) {
-                                  if (_productSales.isEmpty) return const Text("");
+                                  final spots = _getSalesSpots(sales);
                                   final index = value.toInt();
-                                  if (index >= 0 && index < _getSalesSpots().length) {
-                                    final date = _productSales[index].timestamp;
+                                  if (index >= 0 && index < spots.length) {
+                                    final date = sales[index].timestamp;
                                     return Text(
                                       "${date.day}/${date.month}",
                                       style: GoogleFonts.manrope(fontSize: 10),
@@ -302,7 +256,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           borderData: FlBorderData(show: true),
                           lineBarsData: [
                             LineChartBarData(
-                              spots: _getSalesSpots(),
+                              spots: _getSalesSpots(sales),
                               isCurved: true,
                               color: AppColor.primary,
                               barWidth: 3,
@@ -319,11 +273,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 ],
               ),
             ),
-
             const SizedBox(height: 16),
 
             // Recent Sales
-            if (_productSales.isNotEmpty)
+            if (sales.isNotEmpty)
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -343,7 +296,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    ..._productSales.reversed.take(5).map((sale) => Padding(
+                    ...sales.reversed.take(5).map((sale) => Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -404,99 +357,214 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     return "${date.day}/${date.month}/${date.year}";
   }
 
-  void _showDeleteConfirmation() {
+  void _showEditDialog(BuildContext context, ProductModel product, ProductViewModel vm) {
+    final nameController = TextEditingController(text: product.name ?? '');
+    final priceController = TextEditingController(text: product.price?.toString() ?? '');
+    final stockController = TextEditingController(text: product.stock?.toString() ?? '');
+    final thresholdController = TextEditingController(text: product.threshold?.toString() ?? '');
+    String selectedCategory = product.category ?? 'Grocery';
+    final categories = ['Grocery', 'Dairy', 'Beverages', 'Snacks', 'Electronics', 'Clothing'];
+
     showDialog(
       context: context,
-      builder: (context) => ConfirmationDialog(
-        title: "Delete Product",
-        message: "Are you sure you want to delete ${_product!.name}? This cannot be undone.",
-        confirmText: "Delete",
-        confirmColor: AppColor.error,
-        onConfirm: _deleteProduct,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Edit Product',
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppColor.neutral,
+          ),
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: InputDecoration(
+                    labelText: 'Product Name',
+                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: priceController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Price (NPR)',
+                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: stockController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Current Stock',
+                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: thresholdController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Low Stock Threshold',
+                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: selectedCategory,
+                  decoration: InputDecoration(
+                    labelText: 'Category',
+                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                  items: categories.map((category) {
+                    return DropdownMenuItem(
+                      value: category,
+                      child: Text(category, style: GoogleFonts.manrope()),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    selectedCategory = value!;
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.manrope(color: AppColor.secondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              final price = double.tryParse(priceController.text);
+              final stock = int.tryParse(stockController.text);
+              final threshold = int.tryParse(thresholdController.text);
+
+              if (name.isEmpty) {
+                Fluttertoast.showToast(msg: 'Please enter product name');
+                return;
+              }
+              if (price == null || price <= 0) {
+                Fluttertoast.showToast(msg: 'Please enter valid price');
+                return;
+              }
+              if (stock == null || stock < 0) {
+                Fluttertoast.showToast(msg: 'Please enter valid stock');
+                return;
+              }
+              if (threshold == null || threshold < 0) {
+                Fluttertoast.showToast(msg: 'Please enter valid threshold');
+                return;
+              }
+
+              final updatedProduct = ProductModel(
+                id: product.id,
+                name: name,
+                price: price,
+                stock: stock,
+                threshold: threshold,
+                category: selectedCategory,
+                oldPrice: product.oldPrice ?? price,
+              );
+              await vm.updateProduct(updatedProduct);
+              if (mounted) Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColor.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(
+              'Update',
+              style: GoogleFonts.manrope(color: Colors.white),
+            ),
+          ),
+        ],
       ),
     );
   }
-}
 
-// ==================== MODELS ====================
-class Product {
-  final String id;
-  final String name;
-  int stock;
-  final int threshold;
-  final int price;
-  final String category;
-  final int? oldPrice;
-
-  Product({
-    required this.id,
-    required this.name,
-    required this.stock,
-    required this.threshold,
-    required this.price,
-    required this.category,
-    this.oldPrice,
-  });
-
-  bool get isLowStock => stock <= threshold;
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'stock': stock,
-    'threshold': threshold,
-    'price': price,
-    'category': category,
-    'oldPrice': oldPrice,
-  };
-
-  factory Product.fromJson(Map<String, dynamic> json) => Product(
-    id: json['id'] ?? '',
-    name: json['name'] ?? '',
-    stock: json['stock'] ?? 0,
-    threshold: json['threshold'] ?? 0,
-    price: json['price'] ?? 0,
-    category: json['category'] ?? '',
-    oldPrice: json['oldPrice'] ?? json['price'],
-  );
-}
-
-class Sale {
-  final String id;
-  final String productId;
-  final String productName;
-  final int quantity;
-  final int totalPrice;
-  final DateTime timestamp;
-  final int unitPrice;
-
-  Sale({
-    required this.id,
-    required this.productId,
-    required this.productName,
-    required this.quantity,
-    required this.totalPrice,
-    required this.timestamp,
-    required this.unitPrice,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'productId': productId,
-    'productName': productName,
-    'quantity': quantity,
-    'totalPrice': totalPrice,
-    'timestamp': timestamp.toIso8601String(),
-    'unitPrice': unitPrice,
-  };
-
-  factory Sale.fromJson(Map<String, dynamic> json) => Sale(
-    id: json['id'] ?? '',
-    productId: json['productId'] ?? '',
-    productName: json['productName'] ?? '',
-    quantity: json['quantity'] ?? 0,
-    totalPrice: json['totalPrice'] ?? 0,
-    timestamp: json['timestamp'] != null ? DateTime.parse(json['timestamp']) : DateTime.now(),
-    unitPrice: json['unitPrice'] ?? (json['totalPrice'] / json['quantity']).round(),
-  );
+  void _showDeleteConfirmation(BuildContext context, ProductModel product, ProductViewModel vm) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Delete Product',
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppColor.error,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to delete "${product.name}"?',
+          style: GoogleFonts.manrope(fontSize: 14, color: AppColor.neutral),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.manrope(color: AppColor.secondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await vm.deleteproduct(product.id ?? '');
+              if (mounted) {
+                Navigator.pop(context);
+                Navigator.pop(context); // Go back to product list
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColor.error,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.manrope(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

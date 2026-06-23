@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
 import '../utils/colors.dart';
+import '../utils/formatters.dart';
+import '../viewmodel/sale_viewmodel.dart';
+import '../viewmodel/product_viewmodel.dart';
+import '../model/sale_model.dart';
+import '../model/product_model.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -16,50 +20,25 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   String selectedPeriod = "This Week";
   final List<String> periods = ["This Week", "This Month", "This Year"];
 
-  List<DailySales> weeklySales = [];
-  List<TopProduct> topProducts = [];
-  List<TopProduct> bottomProducts = [];
-  int totalSales = 0;
-  int percentChange = 0;
-  bool _isLoading = true;
-
-  List<Sale> _sales = [];
-  List<Product> _products = [];
-
   @override
   void initState() {
     super.initState();
-    _loadData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SaleViewModel>().getAllSales();
+      context.read<ProductViewModel>().getAllProduct();
+    });
   }
 
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+  @override
+  Widget build(BuildContext context) {
+    final saleVm = context.watch<SaleViewModel>();
+    final productVm = context.watch<ProductViewModel>();
 
-    final prefs = await SharedPreferences.getInstance();
+    final sales = saleVm.sales ?? [];
+    final products = productVm.allProducts ?? [];
+    final isLoading = saleVm.loading || productVm.loading;
 
-    // Load sales
-    final String? salesJson = prefs.getString('sales');
-    if (salesJson != null) {
-      List<dynamic> decoded = json.decode(salesJson);
-      setState(() {
-        _sales = decoded.map((e) => Sale.fromJson(e)).toList();
-      });
-    }
-
-    // Load products
-    final String? productsJson = prefs.getString('products');
-    if (productsJson != null) {
-      List<dynamic> decoded = json.decode(productsJson);
-      setState(() {
-        _products = decoded.map((e) => Product.fromJson(e)).toList();
-      });
-    }
-
-    _calculateAnalytics();
-    setState(() => _isLoading = false);
-  }
-
-  void _calculateAnalytics() {
+    // Calculate analytics based on selected period
     final now = DateTime.now();
     DateTime startDate;
     DateTime previousStartDate;
@@ -68,147 +47,101 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       case "This Week":
         startDate = DateTime(now.year, now.month, now.day - now.weekday + 1);
         previousStartDate = startDate.subtract(const Duration(days: 7));
-        _calculateDailySales(startDate);
         break;
       case "This Month":
         startDate = DateTime(now.year, now.month, 1);
         previousStartDate = DateTime(now.year, now.month - 1, 1);
-        _calculateMonthlySales(startDate);
         break;
       default:
         startDate = DateTime(now.year, 1, 1);
         previousStartDate = DateTime(now.year - 1, 1, 1);
-        _calculateYearlySales(startDate);
     }
 
-    // Calculate total sales for current period
-    totalSales = _sales
-        .where((sale) => sale.timestamp.isAfter(startDate))
-        .fold(0, (sum, sale) => sum + sale.totalPrice);
+    // Calculate total sales
+    final totalSales = sales        .where((s) => s.timestamp.isAfter(startDate))
+        .fold(0, (sum, s) => sum + s.totalPrice);
 
-    // Calculate previous period total for percentage change
-    int previousTotal = _sales
-        .where((sale) => sale.timestamp.isAfter(previousStartDate) && sale.timestamp.isBefore(startDate))
-        .fold(0, (sum, sale) => sum + sale.totalPrice);
+    final previousTotal = sales
+        .where((s) => s.timestamp.isAfter(previousStartDate) && s.timestamp.isBefore(startDate))
+        .fold(0, (sum, s) => sum + s.totalPrice);
 
+    int percentChange = 0;
     if (previousTotal > 0) {
       percentChange = ((totalSales - previousTotal) / previousTotal * 100).round();
     }
 
-    _calculateTopAndBottomProducts(startDate);
-  }
-
-  void _calculateDailySales(DateTime startDate) {
-    weeklySales = [];
-    for (int i = 0; i < 7; i++) {
-      final day = startDate.add(Duration(days: i));
-      final dayStart = DateTime(day.year, day.month, day.day);
-      final dayEnd = dayStart.add(const Duration(days: 1));
-
-      final daySales = _sales
-          .where((sale) => sale.timestamp.isAfter(dayStart) && sale.timestamp.isBefore(dayEnd))
-          .fold(0, (sum, sale) => sum + sale.totalPrice);
-
-      weeklySales.add(DailySales(_getDayName(i), daySales));
-    }
-  }
-
-  void _calculateMonthlySales(DateTime startDate) {
-    // For monthly view, show weekly breakdown
-    weeklySales = [];
-    final daysInMonth = DateTime(startDate.year, startDate.month + 1, 0).day;
-    final weeks = ((daysInMonth + 6) / 7).ceil();
-
-    for (int week = 0; week < weeks; week++) {
-      final weekStart = startDate.add(Duration(days: week * 7));
-      final weekEnd = weekStart.add(const Duration(days: 7));
-
-      final weekSales = _sales
-          .where((sale) => sale.timestamp.isAfter(weekStart) && sale.timestamp.isBefore(weekEnd))
-          .fold(0, (sum, sale) => sum + sale.totalPrice);
-
-      weeklySales.add(DailySales("Week ${week + 1}", weekSales));
-    }
-  }
-
-  void _calculateYearlySales(DateTime startDate) {
-    // For yearly view, show monthly breakdown
-    weeklySales = [];
-    for (int month = 0; month < 12; month++) {
-      final monthStart = DateTime(startDate.year, month + 1, 1);
-      final monthEnd = DateTime(startDate.year, month + 2, 1);
-
-      final monthSales = _sales
-          .where((sale) => sale.timestamp.isAfter(monthStart) && sale.timestamp.isBefore(monthEnd))
-          .fold(0, (sum, sale) => sum + sale.totalPrice);
-
-      weeklySales.add(DailySales(_getMonthName(month), monthSales));
-    }
-  }
-
-  void _calculateTopAndBottomProducts(DateTime startDate) {
-    // Calculate sales per product in the selected period
-    Map<String, int> productSales = {};
-    for (var sale in _sales.where((s) => s.timestamp.isAfter(startDate))) {
-      productSales[sale.productId] = (productSales[sale.productId] ?? 0) + sale.quantity;
+    // Calculate daily/weekly/monthly sales
+    List<DailySales> salesData = [];
+    if (selectedPeriod == "This Week") {
+      for (int i = 0; i < 7; i++) {
+        final day = startDate.add(Duration(days: i));
+        final dayStart = DateTime(day.year, day.month, day.day);
+        final dayEnd = dayStart.add(const Duration(days: 1));
+        final daySales = sales
+            .where((s) => s.timestamp.isAfter(dayStart) && s.timestamp.isBefore(dayEnd))
+            .fold(0, (sum, s) => sum + s.totalPrice);
+        salesData.add(DailySales(_getDayName(i), daySales));
+      }
+    } else if (selectedPeriod == "This Month") {
+      final daysInMonth = DateTime(startDate.year, startDate.month + 1, 0).day;
+      final weeks = ((daysInMonth + 6) / 7).ceil();
+      for (int week = 0; week < weeks; week++) {
+        final weekStart = startDate.add(Duration(days: week * 7));
+        final weekEnd = weekStart.add(const Duration(days: 7));
+        final weekSales = sales
+            .where((s) => s.timestamp.isAfter(weekStart) && s.timestamp.isBefore(weekEnd))
+            .fold(0, (sum, s) => sum + s.totalPrice);
+        salesData.add(DailySales("Week ${week + 1}", weekSales));
+      }
+    } else {
+      for (int month = 0; month < 12; month++) {
+        final monthStart = DateTime(startDate.year, month + 1, 1);
+        final monthEnd = DateTime(startDate.year, month + 2, 1);
+        final monthSales = sales
+            .where((s) => s.timestamp.isAfter(monthStart) && s.timestamp.isBefore(monthEnd))
+            .fold(0, (sum, s) => sum + s.totalPrice);
+        salesData.add(DailySales(_getMonthName(month), monthSales));
+      }
     }
 
-    // Sort products by sales quantity
-    var sortedProducts = productSales.entries.toList()
+    // Top and bottom products
+    Map<String, int> productSalesMap = {};
+    for (var sale in sales.where((s) => s.timestamp.isAfter(startDate))) {
+      productSalesMap[sale.productId] = (productSalesMap[sale.productId] ?? 0) + sale.quantity;
+    }
+
+    var sortedProducts = productSalesMap.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
-    // Top 5 products
-    topProducts = [];
+    final topProducts = <TopProduct>[];
     for (int i = 0; i < sortedProducts.length && i < 5; i++) {
-      final product = _products.firstWhere(
+      final product = products.firstWhere(
             (p) => p.id == sortedProducts[i].key,
-        orElse: () => Product(id: '', name: 'Unknown', stock: 0, threshold: 0, price: 0, category: ''),
+        orElse: () => ProductModel(id: '', name: 'Unknown'),
       );
       topProducts.add(TopProduct(
-        name: product.name,
+        name: product.name ?? 'Unknown',
         quantity: sortedProducts[i].value,
         rank: i + 1,
       ));
     }
 
-    // Bottom 5 products (products with least sales)
     var bottomSorted = sortedProducts.toList()..sort((a, b) => a.value.compareTo(b.value));
-    bottomProducts = [];
+    final bottomProducts = <TopProduct>[];
     for (int i = 0; i < bottomSorted.length && i < 5; i++) {
-      final product = _products.firstWhere(
+      final product = products.firstWhere(
             (p) => p.id == bottomSorted[i].key,
-        orElse: () => Product(id: '', name: 'Unknown', stock: 0, threshold: 0, price: 0, category: ''),
+        orElse: () => ProductModel(id: '', name: 'Unknown'),
       );
       if (product.name != 'Unknown') {
         bottomProducts.add(TopProduct(
-          name: product.name,
+          name: product.name ?? 'Unknown',
           quantity: bottomSorted[i].value,
           rank: i + 1,
         ));
       }
     }
 
-    // If no sales data, show empty lists
-    if (topProducts.isEmpty) {
-      topProducts = [TopProduct(name: 'No sales data', quantity: 0, rank: 1)];
-    }
-    if (bottomProducts.isEmpty) {
-      bottomProducts = [TopProduct(name: 'No sales data', quantity: 0, rank: 1)];
-    }
-  }
-
-  String _getDayName(int index) {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return days[index];
-  }
-
-  String _getMonthName(int index) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return months[index];
-  }
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColor.background,
       appBar: AppBar(
@@ -243,17 +176,19 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   setState(() {
                     selectedPeriod = value;
                   });
-                  _calculateAnalytics();
                 }
               },
             ),
           ),
         ],
       ),
-      body: _isLoading
+      body: isLoading
           ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
           : RefreshIndicator(
-        onRefresh: _loadData,
+        onRefresh: () async {
+          await saleVm.getAllSales();
+          await productVm.getAllProduct();
+        },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           child: Column(
@@ -310,8 +245,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   ],
                 ),
               ),
-
-              if (weeklySales.isNotEmpty)
+              if (salesData.isNotEmpty)
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16),
                   padding: const EdgeInsets.all(16),
@@ -338,7 +272,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         child: BarChart(
                           BarChartData(
                             alignment: BarChartAlignment.spaceAround,
-                            maxY: weeklySales.map((e) => e.amount.toDouble()).reduce((a, b) => a > b ? a : b) * 1.2,
+                            maxY: salesData.map((e) => e.amount.toDouble()).reduce((a, b) => a > b ? a : b) * 1.2,
                             titlesData: FlTitlesData(
                               show: true,
                               bottomTitles: AxisTitles(
@@ -346,9 +280,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                   showTitles: true,
                                   getTitlesWidget: (value, meta) {
                                     int index = value.toInt();
-                                    if (index >= 0 && index < weeklySales.length) {
+                                    if (index >= 0 && index < salesData.length) {
                                       return Text(
-                                        weeklySales[index].day,
+                                        salesData[index].day,
                                         style: GoogleFonts.manrope(fontSize: 10),
                                       );
                                     }
@@ -373,12 +307,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                             ),
                             gridData: FlGridData(show: true),
                             borderData: FlBorderData(show: false),
-                            barGroups: List.generate(weeklySales.length, (index) {
+                            barGroups: List.generate(salesData.length, (index) {
                               return BarChartGroupData(
                                 x: index,
                                 barRods: [
                                   BarChartRodData(
-                                    toY: weeklySales[index].amount.toDouble(),
+                                    toY: salesData[index].amount.toDouble(),
                                     color: AppColor.primary,
                                     width: selectedPeriod == "This Week" ? 30 : 20,
                                     borderRadius: BorderRadius.circular(6),
@@ -392,9 +326,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     ],
                   ),
                 ),
-
               const SizedBox(height: 16),
-
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 padding: const EdgeInsets.all(16),
@@ -421,21 +353,24 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    ...List.generate(topProducts.length, (index) {
-                      final product = topProducts[index];
-                      return _buildProductRow(
-                        rank: product.rank,
-                        name: product.name,
-                        quantity: product.quantity,
-                        isTop: true,
-                      );
-                    }),
+                    ...List.generate(
+                      topProducts.isEmpty ? 1 : topProducts.length,
+                          (index) {
+                        final product = topProducts.isEmpty
+                            ? TopProduct(name: 'No sales data', quantity: 0, rank: 1)
+                            : topProducts[index];
+                        return _buildProductRow(
+                          rank: product.rank,
+                          name: product.name,
+                          quantity: product.quantity,
+                          isTop: true,
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
-
               const SizedBox(height: 16),
-
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 padding: const EdgeInsets.all(16),
@@ -462,19 +397,23 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    ...List.generate(bottomProducts.length, (index) {
-                      final product = bottomProducts[index];
-                      return _buildProductRow(
-                        rank: product.rank,
-                        name: product.name,
-                        quantity: product.quantity,
-                        isTop: false,
-                      );
-                    }),
+                    ...List.generate(
+                      bottomProducts.isEmpty ? 1 : bottomProducts.length,
+                          (index) {
+                        final product = bottomProducts.isEmpty
+                            ? TopProduct(name: 'No sales data', quantity: 0, rank: 1)
+                            : bottomProducts[index];
+                        return _buildProductRow(
+                          rank: product.rank,
+                          name: product.name,
+                          quantity: product.quantity,
+                          isTop: false,
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
-
               const SizedBox(height: 24),
             ],
           ),
@@ -535,6 +474,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
+  String _getDayName(int index) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return days[index];
+  }
+
+  String _getMonthName(int index) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[index];
+  }
+
   String _formatNumber(int number) {
     if (number >= 100000) {
       return '${(number / 1000).toStringAsFixed(0)}K';
@@ -550,7 +499,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 }
 
-// Temporary models
 class DailySales {
   final String day;
   final int amount;
@@ -562,80 +510,4 @@ class TopProduct {
   final int quantity;
   final int rank;
   TopProduct({required this.name, required this.quantity, required this.rank});
-}
-
-class Sale {
-  final String id;
-  final String productId;
-  final String productName;
-  final int quantity;
-  final int totalPrice;
-  final DateTime timestamp;
-
-  Sale({
-    required this.id,
-    required this.productId,
-    required this.productName,
-    required this.quantity,
-    required this.totalPrice,
-    required this.timestamp,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'productId': productId,
-    'productName': productName,
-    'quantity': quantity,
-    'totalPrice': totalPrice,
-    'timestamp': timestamp.toIso8601String(),
-  };
-
-  factory Sale.fromJson(Map<String, dynamic> json) => Sale(
-    id: json['id'],
-    productId: json['productId'],
-    productName: json['productName'],
-    quantity: json['quantity'],
-    totalPrice: json['totalPrice'],
-    timestamp: DateTime.parse(json['timestamp']),
-  );
-}
-
-class Product {
-  final String id;
-  final String name;
-  final int stock;
-  final int threshold;
-  final int price;
-  final String category;
-  final int? oldPrice;
-
-  Product({
-    required this.id,
-    required this.name,
-    required this.stock,
-    required this.threshold,
-    required this.price,
-    required this.category,
-    this.oldPrice,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'stock': stock,
-    'threshold': threshold,
-    'price': price,
-    'category': category,
-    'oldPrice': oldPrice,
-  };
-
-  factory Product.fromJson(Map<String, dynamic> json) => Product(
-    id: json['id'],
-    name: json['name'],
-    stock: json['stock'],
-    threshold: json['threshold'],
-    price: json['price'],
-    category: json['category'],
-    oldPrice: json['oldPrice'],
-  );
 }

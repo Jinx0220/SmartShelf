@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+import 'package:provider/provider.dart';
 import '../utils/colors.dart';
+import '../viewmodel/auth_viewmodel.dart';
+import '../viewmodel/settings_viewmodel.dart';
+import '../viewmodel/product_viewmodel.dart';
+import '../viewmodel/sale_viewmodel.dart';
+import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -13,17 +17,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  String _selectedCurrency = 'NPR';
-  String _selectedLanguage = 'English';
-
-  // Profile data
-  String _fullName = '';
-  String _email = '';
-  String _phone = '';
-  String _storeName = '';
-  String _storeAddress = '';
-
-  // Dialog controllers
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
@@ -33,8 +26,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadUserData();
-    _loadPreferences();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AuthViewModel>().getUserProfile();
+      context.read<SettingsViewModel>().loadSettings();
+    });
   }
 
   @override
@@ -47,35 +42,205 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
-  Future<void> _loadUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _fullName = prefs.getString('fullName') ?? 'Not set';
-      _email = prefs.getString('email') ?? 'Not set';
-      _phone = prefs.getString('phone') ?? 'Not set';
-      _storeName = prefs.getString('store_name') ?? 'Everest Kirana Store';
-      _storeAddress = prefs.getString('store_address') ?? 'Not set';
-    });
+  @override
+  Widget build(BuildContext context) {
+    final authVm = context.watch<AuthViewModel>();
+    final settingsVm = context.watch<SettingsViewModel>();
+    final user = authVm.currentUser;
+
+    return Scaffold(
+      backgroundColor: AppColor.background,
+      appBar: AppBar(
+        title: Text(
+          'Settings',
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: AppColor.primary,
+        elevation: 0,
+        centerTitle: true,
+      ),
+      body: authVm.loading || settingsVm.loading
+          ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
+          : ListView(
+        children: [
+          // Account Section
+          _buildSectionHeader('Account'),
+          _buildSettingsTile(
+            icon: Icons.person_outline,
+            title: 'Profile Information',
+            subtitle: user?.fullName ?? 'Not set',
+            onTap: () => _navigateToProfile(context, user),
+          ),
+          _buildSettingsTile(
+            icon: Icons.store_outlined,
+            title: 'Store Settings',
+            subtitle: user?.storeName ?? 'Everest Kirana Store',
+            onTap: () => _navigateToStoreSettings(context, user),
+          ),
+          const Divider(),
+
+          // Data Management Section
+          _buildSectionHeader('Data Management'),
+          _buildSettingsTile(
+            icon: Icons.backup_outlined,
+            title: 'Backup Data',
+            subtitle: 'Coming soon',
+            onTap: () => Fluttertoast.showToast(msg: 'Backup feature coming soon'),
+          ),
+          _buildSettingsTile(
+            icon: Icons.restore_outlined,
+            title: 'Restore Data',
+            subtitle: 'Coming soon',
+            onTap: () => Fluttertoast.showToast(msg: 'Restore feature coming soon'),
+          ),
+          _buildSettingsTile(
+            icon: Icons.delete_outline,
+            title: 'Delete All Data',
+            subtitle: 'Permanently delete all products and sales',
+            onTap: () => _showDeleteConfirmation(context),
+            textColor: AppColor.error,
+          ),
+          const Divider(),
+
+          // Preferences Section
+          _buildSectionHeader('Preferences'),
+          _buildDropdownTile(
+            icon: Icons.attach_money,
+            title: 'Currency',
+            value: settingsVm.currency,
+            items: ['NPR', 'USD', 'INR', 'EUR'],
+            onChanged: (value) async {
+              if (value != null) {
+                await settingsVm.saveCurrency(value);
+                Fluttertoast.showToast(msg: 'Currency changed to $value');
+              }
+            },
+          ),
+          _buildDropdownTile(
+            icon: Icons.language,
+            title: 'Language',
+            value: settingsVm.language,
+            items: ['English', 'Nepali', 'Hindi'],
+            onChanged: (value) async {
+              if (value != null) {
+                await settingsVm.saveLanguage(value);
+                Fluttertoast.showToast(msg: 'Language changed to $value');
+              }
+            },
+          ),
+          _buildDropdownTile(
+            icon: Icons.calendar_today,
+            title: 'Weekly Off Day',
+            value: settingsVm.weeklyOffDay.toString(),
+            items: ['0 (Sunday)', '1 (Monday)', '2 (Tuesday)', '3 (Wednesday)', '4 (Thursday)', '5 (Friday)', '6 (Saturday)'],
+            onChanged: (value) async {
+              if (value != null) {
+                final day = int.tryParse(value.split(' ').first) ?? 0;
+                await settingsVm.saveWeeklyOffDay(day);
+                Fluttertoast.showToast(msg: 'Weekly off day updated');
+              }
+            },
+          ),
+          const Divider(),
+
+          // About Section
+          _buildSectionHeader('About'),
+          _buildSettingsTile(
+            icon: Icons.info_outline,
+            title: 'About SmartShelf',
+            subtitle: 'Version 1.0.0',
+            onTap: _showAboutDialog,
+          ),
+          _buildSettingsTile(
+            icon: Icons.logout,
+            title: 'Logout',
+            subtitle: 'Sign out of your account',
+            onTap: () => _showLogoutConfirmation(context),
+            textColor: AppColor.error,
+          ),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
   }
 
-  Future<void> _loadPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _selectedCurrency = prefs.getString('currency') ?? 'NPR';
-      _selectedLanguage = prefs.getString('language') ?? 'English';
-    });
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+      child: Text(
+        title,
+        style: GoogleFonts.spaceGrotesk(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: AppColor.primary,
+        ),
+      ),
+    );
   }
 
-  Future<void> _savePreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('currency', _selectedCurrency);
-    await prefs.setString('language', _selectedLanguage);
+  Widget _buildSettingsTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    Color? textColor,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: AppColor.secondary),
+      title: Text(
+        title,
+        style: GoogleFonts.manrope(
+          color: textColor ?? AppColor.neutral,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: GoogleFonts.manrope(
+          fontSize: 12,
+          color: AppColor.secondary,
+        ),
+      ),
+      trailing: const Icon(Icons.chevron_right, color: AppColor.secondary),
+      onTap: onTap,
+    );
   }
 
-  void _navigateToProfile() {
-    _nameController.text = _fullName == 'Not set' ? '' : _fullName;
-    _emailController.text = _email == 'Not set' ? '' : _email;
-    _phoneController.text = _phone == 'Not set' ? '' : _phone;
+  Widget _buildDropdownTile({
+    required IconData icon,
+    required String title,
+    required String value,
+    required List<String> items,
+    required Function(String?) onChanged,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: AppColor.secondary),
+      title: Text(
+        title,
+        style: GoogleFonts.manrope(color: AppColor.neutral),
+      ),
+      trailing: DropdownButton<String>(
+        value: value,
+        dropdownColor: AppColor.background,
+        style: GoogleFonts.manrope(color: AppColor.neutral),
+        items: items.map((item) {
+          return DropdownMenuItem(value: item, child: Text(item));
+        }).toList(),
+        onChanged: onChanged,
+        underline: const SizedBox(),
+        icon: Icon(Icons.arrow_drop_down, color: AppColor.primary),
+      ),
+    );
+  }
+
+  void _navigateToProfile(BuildContext context, User? user) {
+    _nameController.text = user?.fullName ?? '';
+    _emailController.text = user?.email ?? '';
+    _phoneController.text = user?.phone ?? '';
 
     showDialog(
       context: context,
@@ -174,19 +339,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              final prefs = await SharedPreferences.getInstance();
-              if (_nameController.text.isNotEmpty) {
-                await prefs.setString('fullName', _nameController.text);
+              final authVm = context.read<AuthViewModel>();
+              final success = await authVm.updateProfile(
+                fullName: _nameController.text.trim(),
+                email: _emailController.text.trim(),
+                phone: _phoneController.text.trim(),
+              );
+              if (success && mounted) {
+                Navigator.pop(context);
+                Fluttertoast.showToast(msg: 'Profile updated successfully');
+              } else if (mounted) {
+                Fluttertoast.showToast(msg: authVm.error ?? 'Failed to update profile');
               }
-              if (_emailController.text.isNotEmpty && _emailController.text.contains('@')) {
-                await prefs.setString('email', _emailController.text);
-              }
-              if (_phoneController.text.isNotEmpty && _phoneController.text.length == 10) {
-                await prefs.setString('phone', _phoneController.text);
-              }
-              await _loadUserData();
-              if (mounted) Navigator.pop(context);
-              Fluttertoast.showToast(msg: 'Profile updated successfully');
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColor.primary,
@@ -202,9 +366,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _navigateToStoreSettings() {
-    _storeNameController.text = _storeName;
-    _storeAddressController.text = _storeAddress == 'Not set' ? '' : _storeAddress;
+  void _navigateToStoreSettings(BuildContext context, User? user) {
+    _storeNameController.text = user?.storeName ?? '';
+    _storeAddressController.text = user?.storeAddress ?? '';
 
     showDialog(
       context: context,
@@ -280,16 +444,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              final prefs = await SharedPreferences.getInstance();
-              if (_storeNameController.text.isNotEmpty) {
-                await prefs.setString('store_name', _storeNameController.text);
+              final authVm = context.read<AuthViewModel>();
+              final success = await authVm.updateStoreSettings(
+                storeName: _storeNameController.text.trim(),
+                storeAddress: _storeAddressController.text.trim(),
+              );
+              if (success && mounted) {
+                Navigator.pop(context);
+                Fluttertoast.showToast(msg: 'Store settings updated successfully');
+              } else if (mounted) {
+                Fluttertoast.showToast(msg: authVm.error ?? 'Failed to update store settings');
               }
-              if (_storeAddressController.text.isNotEmpty) {
-                await prefs.setString('store_address', _storeAddressController.text);
-              }
-              await _loadUserData();
-              if (mounted) Navigator.pop(context);
-              Fluttertoast.showToast(msg: 'Store settings updated successfully');
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColor.primary,
@@ -305,7 +470,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showDeleteConfirmation() {
+  void _showDeleteConfirmation(BuildContext context) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -332,12 +497,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.remove('products');
-              await prefs.remove('sales');
-              await prefs.remove('manual_predictions');
-              if (mounted) Navigator.pop(context);
-              Fluttertoast.showToast(msg: 'All data deleted successfully');
+              final productVm = context.read<ProductViewModel>();
+              final saleVm = context.read<SaleViewModel>();
+
+              // Delete all products and sales
+              final products = productVm.allProducts ?? [];
+              for (var product in products) {
+                await productVm.deleteproduct(product.id ?? '');
+              }
+              final sales = saleVm.sales ?? [];
+              for (var sale in sales) {
+                await saleVm.deleteSale(sale.id);
+              }
+
+              if (mounted) {
+                Navigator.pop(context);
+                Fluttertoast.showToast(msg: 'All data deleted successfully');
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColor.error,
@@ -353,7 +529,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showLogoutConfirmation() async {
+  void _showLogoutConfirmation(BuildContext context) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -380,10 +556,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setBool("isLoggedIn", false);
+              final authVm = context.read<AuthViewModel>();
+              await authVm.logout();
               if (mounted) {
-                Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                      (route) => false,
+                );
               }
             },
             style: ElevatedButton.styleFrom(
@@ -439,7 +619,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   '• Inventory Management\n'
                   '• AI-Powered Predictions\n'
                   '• Sales Analytics\n'
-                  '• Bulk Import (CSV)\n'
                   '• Export Orders (WhatsApp/CSV)',
               style: GoogleFonts.manrope(fontSize: 12, color: AppColor.secondary),
               textAlign: TextAlign.center,
@@ -460,184 +639,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColor.background,
-      appBar: AppBar(
-        title: Text(
-          'Settings',
-          style: GoogleFonts.spaceGrotesk(
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
-        backgroundColor: AppColor.primary,
-        elevation: 0,
-        centerTitle: true,
-      ),
-      body: ListView(
-        children: [
-          // Account Section
-          _buildSectionHeader('Account'),
-          _buildSettingsTile(
-            icon: Icons.person_outline,
-            title: 'Profile Information',
-            subtitle: _fullName != 'Not set' ? _fullName : 'Manage your account details',
-            onTap: _navigateToProfile,
-          ),
-          _buildSettingsTile(
-            icon: Icons.store_outlined,
-            title: 'Store Settings',
-            subtitle: _storeName,
-            onTap: _navigateToStoreSettings,
-          ),
-
-          const Divider(),
-
-          // Data Management Section
-          _buildSectionHeader('Data Management'),
-          _buildSettingsTile(
-            icon: Icons.backup_outlined,
-            title: 'Backup Data',
-            subtitle: 'Coming soon',
-            onTap: () => Fluttertoast.showToast(msg: 'Backup feature coming soon'),
-          ),
-          _buildSettingsTile(
-            icon: Icons.restore_outlined,
-            title: 'Restore Data',
-            subtitle: 'Coming soon',
-            onTap: () => Fluttertoast.showToast(msg: 'Restore feature coming soon'),
-          ),
-          _buildSettingsTile(
-            icon: Icons.delete_outline,
-            title: 'Delete All Data',
-            subtitle: 'Permanently delete all products and sales',
-            onTap: _showDeleteConfirmation,
-            textColor: AppColor.error,
-          ),
-
-          const Divider(),
-
-          // Preferences Section
-          _buildSectionHeader('Preferences'),
-          _buildDropdownTile(
-            icon: Icons.attach_money,
-            title: 'Currency',
-            value: _selectedCurrency,
-            items: ['NPR', 'USD', 'INR', 'EUR'],
-            onChanged: (value) async {
-              setState(() => _selectedCurrency = value!);
-              await _savePreferences();
-              Fluttertoast.showToast(msg: 'Currency changed to $value');
-            },
-          ),
-          _buildDropdownTile(
-            icon: Icons.language,
-            title: 'Language',
-            value: _selectedLanguage,
-            items: ['English', 'Nepali', 'Hindi'],
-            onChanged: (value) async {
-              setState(() => _selectedLanguage = value!);
-              await _savePreferences();
-              Fluttertoast.showToast(msg: 'Language changed to $value');
-            },
-          ),
-
-          const Divider(),
-
-          // About Section
-          _buildSectionHeader('About'),
-          _buildSettingsTile(
-            icon: Icons.info_outline,
-            title: 'About SmartShelf',
-            subtitle: 'Version 1.0.0',
-            onTap: _showAboutDialog,
-          ),
-          _buildSettingsTile(
-            icon: Icons.logout,
-            title: 'Logout',
-            subtitle: 'Sign out of your account',
-            onTap: _showLogoutConfirmation,
-            textColor: AppColor.error,
-          ),
-
-          const SizedBox(height: 32),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
-      child: Text(
-        title,
-        style: GoogleFonts.spaceGrotesk(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: AppColor.primary,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSettingsTile({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-    Color? textColor,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: AppColor.secondary),
-      title: Text(
-        title,
-        style: GoogleFonts.manrope(
-          color: textColor ?? AppColor.neutral,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: GoogleFonts.manrope(
-          fontSize: 12,
-          color: AppColor.secondary,
-        ),
-      ),
-      trailing: const Icon(Icons.chevron_right, color: AppColor.secondary),
-      onTap: onTap,
-    );
-  }
-
-  Widget _buildDropdownTile({
-    required IconData icon,
-    required String title,
-    required String value,
-    required List<String> items,
-    required Function(String?) onChanged,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: AppColor.secondary),
-      title: Text(
-        title,
-        style: GoogleFonts.manrope(color: AppColor.neutral),
-      ),
-      trailing: DropdownButton<String>(
-        value: value,
-        dropdownColor: AppColor.background,
-        style: GoogleFonts.manrope(color: AppColor.neutral),
-        items: items.map((item) {
-          return DropdownMenuItem(value: item, child: Text(item));
-        }).toList(),
-        onChanged: onChanged,
-        underline: const SizedBox(),
-        icon: Icon(Icons.arrow_drop_down, color: AppColor.primary),
       ),
     );
   }

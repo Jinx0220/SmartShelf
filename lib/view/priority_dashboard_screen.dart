@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+import 'package:provider/provider.dart';
 import '../utils/colors.dart';
+import '../viewmodel/product_viewmodel.dart';
+import '../viewmodel/sale_viewmodel.dart';
+import '../viewmodel/auth_viewmodel.dart';
+import '../model/product_model.dart';
 import 'log_sale_screen.dart';
 import 'product_list_screen.dart';
 
@@ -15,29 +18,16 @@ class PriorityDashboardScreen extends StatefulWidget {
 }
 
 class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
-  int todaySales = 0;
-  int weeklySales = 0;
-  int lowStockCount = 0;
-  String storeName = "Everest Kirana Store";
   String greeting = "";
-
-  List<CriticalProduct> criticalProducts = [];
-  List<TopProduct> topProducts = [];
-  List<Product> _products = [];
-  List<Sale> _sales = [];
 
   @override
   void initState() {
     super.initState();
-    _loadStoreName();
     _setGreeting();
-    _loadData();
-  }
-
-  Future<void> _loadStoreName() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      storeName = prefs.getString('store_name') ?? 'Everest Kirana Store';
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ProductViewModel>().getAllProduct();
+      context.read<SaleViewModel>().getAllSales();
+      context.read<AuthViewModel>().getUserProfile();
     });
   }
 
@@ -52,304 +42,93 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     }
   }
 
-  Future<void> _loadData() async {
-    final prefs = await SharedPreferences.getInstance();
+  @override
+  Widget build(BuildContext context) {
+    final productVm = context.watch<ProductViewModel>();
+    final saleVm = context.watch<SaleViewModel>();
+    final authVm = context.watch<AuthViewModel>();
 
-    // Load products
-    final String? productsJson = prefs.getString('products');
-    if (productsJson != null && productsJson.isNotEmpty) {
-      try {
-        List<dynamic> decoded = json.decode(productsJson);
-        setState(() {
-          _products = decoded.map((e) => Product.fromJson(e)).toList();
-        });
-      } catch (e) {
-        _products = [];
-      }
-    }
+    final products = productVm.allProducts ?? [];
+    final sales = saleVm.sales ?? [];
+    final user = authVm.currentUser;
 
-    // Load sales
-    final String? salesJson = prefs.getString('sales');
-    if (salesJson != null && salesJson.isNotEmpty) {
-      try {
-        List<dynamic> decoded = json.decode(salesJson);
-        setState(() {
-          _sales = decoded.map((e) => Sale.fromJson(e)).toList();
-        });
-      } catch (e) {
-        _sales = [];
-      }
-    }
+    // Calculate dashboard data
+    final today = DateTime.now();
+    final todayStart = DateTime(today.year, today.month, today.day);
+    final weekAgo = todayStart.subtract(const Duration(days: 7));
 
-    _calculateDashboardData();
-  }
+    final todaySales = sales
+        .where((s) => s.timestamp.isAfter(todayStart))
+        .fold(0, (sum, s) => sum + s.totalPrice);
 
-  void _calculateDashboardData() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final weekAgo = today.subtract(const Duration(days: 7));
+    final weeklySales = sales
+        .where((s) => s.timestamp.isAfter(weekAgo))
+        .fold(0, (sum, s) => sum + s.totalPrice);
 
-    // Calculate today's sales
-    todaySales = _sales
-        .where((sale) => sale.timestamp.isAfter(today))
-        .fold(0, (sum, sale) => sum + sale.totalPrice);
+    final lowStockCount = products.where((p) => p.isLowStock).length;
 
-    // Calculate weekly sales
-    weeklySales = _sales
-        .where((sale) => sale.timestamp.isAfter(weekAgo))
-        .fold(0, (sum, sale) => sum + sale.totalPrice);
-
-    // Calculate low stock count
-    lowStockCount = _products.where((p) => p.stock <= p.threshold).length;
-
-    // Calculate top 5 products by sales quantity
+    // Top 5 products
     Map<String, int> productSales = {};
-    for (var sale in _sales) {
+    for (var sale in sales) {
       productSales[sale.productId] = (productSales[sale.productId] ?? 0) + sale.quantity;
     }
 
     var sortedProducts = productSales.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
-    topProducts = [];
+    final topProducts = <TopProduct>[];
     for (int i = 0; i < sortedProducts.length && i < 5; i++) {
-      final product = _products.firstWhere(
+      final product = products.firstWhere(
             (p) => p.id == sortedProducts[i].key,
-        orElse: () => Product(id: '', name: 'Unknown', stock: 0, threshold: 0, price: 0, category: ''),
+        orElse: () => ProductModel(id: '', name: 'Unknown'),
       );
       topProducts.add(TopProduct(
-        name: product.name,
+        name: product.name ?? 'Unknown',
         quantity: sortedProducts[i].value,
         rank: i + 1,
       ));
     }
 
-    // Calculate critical products (stock <= threshold, sorted by stock ascending)
-    criticalProducts = _products
-        .where((p) => p.stock <= p.threshold)
+    // Critical products (stock <= threshold)
+    final criticalProducts = products
+        .where((p) => p.isLowStock)
         .map((p) => CriticalProduct(
-      name: p.name,
-      stock: p.stock,
-      threshold: p.threshold,
-      productId: p.id,
+      name: p.name ?? '',
+      stock: p.stock ?? 0,
+      threshold: p.threshold ?? 0,
+      productId: p.id ?? '',
     ))
         .toList()
       ..sort((a, b) => a.stock.compareTo(b.stock));
 
-    setState(() {});
-  }
+    final isLoading = productVm.loading || saleVm.loading;
 
-  Future<void> _updateStockAfterOrder(CriticalProduct product, int orderQty) async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? productsJson = prefs.getString('products');
-
-    if (productsJson != null && productsJson.isNotEmpty) {
-      List<dynamic> decoded = json.decode(productsJson);
-      List<Product> products = decoded.map((e) => Product.fromJson(e)).toList();
-
-      // Find and update the product
-      final index = products.indexWhere((p) => p.id == product.productId);
-      if (index != -1) {
-        final updatedProduct = Product(
-          id: products[index].id,
-          name: products[index].name,
-          stock: products[index].stock + orderQty,
-          threshold: products[index].threshold,
-          price: products[index].price,
-          category: products[index].category,
-          oldPrice: products[index].oldPrice,
-        );
-        products[index] = updatedProduct;
-
-        // Save back to SharedPreferences
-        final String updatedJson = json.encode(products.map((e) => e.toJson()).toList());
-        await prefs.setString('products', updatedJson);
-
-        // Reload dashboard data
-        await _loadData();
-        setState(() {});
-      }
-    }
-  }
-
-  void _showOrderDialog(CriticalProduct product) {
-    final TextEditingController quantityController = TextEditingController(
-        text: (product.threshold - product.stock).toString()
-    );
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          "Order ${product.name}",
-          style: GoogleFonts.spaceGrotesk(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: AppColor.primary,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColor.primary.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text("Current Stock:", style: GoogleFonts.manrope(fontSize: 14)),
-                      Text("${product.stock} units", style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text("Threshold:", style: GoogleFonts.manrope(fontSize: 14)),
-                      Text("${product.threshold} units", style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text("Recommended:", style: GoogleFonts.manrope(fontSize: 14, color: AppColor.success)),
-                      Text("${product.threshold - product.stock} units",
-                          style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.bold, color: AppColor.success)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: quantityController,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: "Order Quantity",
-                labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColor.primary, width: 2),
-                ),
-                suffixText: "units",
-                suffixStyle: GoogleFonts.manrope(color: AppColor.secondary),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              "Cancel",
-              style: GoogleFonts.manrope(color: AppColor.secondary),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              int orderQty = int.tryParse(quantityController.text) ?? 0;
-              if (orderQty > 0) {
-                await _updateStockAfterOrder(product, orderQty);
-                if (mounted) Navigator.pop(context);
-                _showOrderSuccessDialog(product.name, orderQty);
-              } else {
-                Fluttertoast.showToast(msg: "Please enter valid quantity");
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColor.success,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text(
-              "Confirm Order",
-              style: GoogleFonts.manrope(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showOrderSuccessDialog(String productName, int quantity) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(Icons.check_circle, color: AppColor.success),
-            const SizedBox(width: 8),
-            Text(
-              "Order Placed!",
-              style: GoogleFonts.spaceGrotesk(
-                fontWeight: FontWeight.w600,
-                color: AppColor.success,
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              "Ordered $quantity x $productName",
-              style: GoogleFonts.manrope(fontSize: 14),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "Stock has been updated",
-              style: GoogleFonts.manrope(fontSize: 12, color: AppColor.secondary),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text("OK", style: GoogleFonts.manrope(color: AppColor.primary)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColor.background,
       body: RefreshIndicator(
-        onRefresh: _loadData,
-        child: SafeArea(
+        onRefresh: () async {
+          await productVm.getAllProduct();
+          await saleVm.getAllSales();
+        },
+        child: isLoading
+            ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
+            : SafeArea(
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildGreetingHeader(),
+                _buildGreetingHeader(greeting, user?.storeName ?? 'Everest Kirana Store'),
                 const SizedBox(height: 16),
-                _buildSalesCards(),
+                _buildSalesCards(todaySales, weeklySales, lowStockCount),
                 const SizedBox(height: 16),
-                if (lowStockCount > 0) _buildLowStockAlert(),
+                if (lowStockCount > 0) _buildLowStockAlert(lowStockCount),
                 const SizedBox(height: 24),
-                if (topProducts.isNotEmpty) _buildTopProductsSection(),
+                if (topProducts.isNotEmpty) _buildTopProductsSection(topProducts),
                 const SizedBox(height: 24),
-                if (criticalProducts.isNotEmpty) _buildCriticalStockSection(),
+                if (criticalProducts.isNotEmpty) _buildCriticalStockSection(context, criticalProducts),
                 const SizedBox(height: 32),
-                _buildActionButtons(),
+                _buildActionButtons(context),
                 const SizedBox(height: 20),
               ],
             ),
@@ -359,7 +138,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     );
   }
 
-  Widget _buildGreetingHeader() {
+  Widget _buildGreetingHeader(String greeting, String storeName) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -438,7 +217,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     );
   }
 
-  Widget _buildSalesCards() {
+  Widget _buildSalesCards(int todaySales, int weeklySales, int lowStockCount) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
@@ -570,7 +349,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     );
   }
 
-  Widget _buildLowStockAlert() {
+  Widget _buildLowStockAlert(int count) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
@@ -593,7 +372,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                "$lowStockCount products are running low on stock. Please reorder soon.",
+                "$count products are running low on stock. Please reorder soon.",
                 style: GoogleFonts.manrope(
                   fontSize: 13,
                   color: AppColor.error,
@@ -607,11 +386,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     );
   }
 
-  Widget _buildTopProductsSection() {
-    if (topProducts.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
+  Widget _buildTopProductsSection(List<TopProduct> topProducts) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
@@ -695,7 +470,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     );
   }
 
-  Widget _buildCriticalStockSection() {
+  Widget _buildCriticalStockSection(BuildContext context, List<CriticalProduct> criticalProducts) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
@@ -723,14 +498,14 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            ...criticalProducts.take(5).map((product) => _buildCriticalProductRow(product)),
+            ...criticalProducts.take(5).map((product) => _buildCriticalProductRow(context, product)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildCriticalProductRow(CriticalProduct product) {
+  Widget _buildCriticalProductRow(BuildContext context, CriticalProduct product) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -759,7 +534,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
             ),
           ),
           ElevatedButton(
-            onPressed: () => _showOrderDialog(product),
+            onPressed: () => _showOrderDialog(context, product),
             style: ElevatedButton.styleFrom(
               backgroundColor: product.stock == 0 ? AppColor.error : AppColor.warning,
               shape: RoundedRectangleBorder(
@@ -781,7 +556,133 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     );
   }
 
-  Widget _buildActionButtons() {
+  void _showOrderDialog(BuildContext context, CriticalProduct product) {
+    final TextEditingController quantityController = TextEditingController(
+        text: (product.threshold - product.stock).toString()
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          "Order ${product.name}",
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppColor.primary,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColor.primary.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text("Current Stock:", style: GoogleFonts.manrope(fontSize: 14)),
+                      Text("${product.stock} units", style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text("Threshold:", style: GoogleFonts.manrope(fontSize: 14)),
+                      Text("${product.threshold} units", style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text("Recommended:", style: GoogleFonts.manrope(fontSize: 14, color: AppColor.success)),
+                      Text("${product.threshold - product.stock} units",
+                          style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.bold, color: AppColor.success)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: quantityController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: "Order Quantity",
+                labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColor.primary, width: 2),
+                ),
+                suffixText: "units",
+                suffixStyle: GoogleFonts.manrope(color: AppColor.secondary),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              "Cancel",
+              style: GoogleFonts.manrope(color: AppColor.secondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              int orderQty = int.tryParse(quantityController.text) ?? 0;
+              if (orderQty > 0) {
+                // Update product stock
+                final productVm = context.read<ProductViewModel>();
+                final products = productVm.allProducts ?? [];
+                final index = products.indexWhere((p) => p.id == product.productId);
+                if (index != -1) {
+                  final updated = products[index].copyWith(
+                    stock: (products[index].stock ?? 0) + orderQty,
+                  );
+                  await productVm.updateProduct(updated);
+                }
+                if (mounted) {
+                  Navigator.pop(context);
+                  Fluttertoast.showToast(msg: "Ordered $orderQty x ${product.name}");
+                  // Refresh dashboard
+                  await productVm.getAllProduct();
+                }
+              } else {
+                Fluttertoast.showToast(msg: "Please enter valid quantity");
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColor.success,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(
+              "Confirm Order",
+              style: GoogleFonts.manrope(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
@@ -792,7 +693,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const LogSaleScreen()),
-                ).then((_) => _loadData());
+                );
               },
               icon: const Icon(Icons.sell, size: 20),
               label: Text(
@@ -819,7 +720,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const ProductListScreen()),
-                ).then((_) => _loadData());
+                );
               },
               icon: const Icon(Icons.add, size: 20),
               label: Text(
@@ -854,94 +755,27 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
   }
 }
 
-// Models
+// Helper classes
 class CriticalProduct {
   final String name;
   final int stock;
   final int threshold;
   final String productId;
-  CriticalProduct({required this.name, required this.stock, required this.threshold, required this.productId});
+  CriticalProduct({
+    required this.name,
+    required this.stock,
+    required this.threshold,
+    required this.productId,
+  });
 }
 
 class TopProduct {
   final String name;
   final int quantity;
   final int rank;
-  TopProduct({required this.name, required this.quantity, required this.rank});
-}
-
-class Product {
-  final String id;
-  final String name;
-  int stock;
-  final int threshold;
-  final int price;
-  final String category;
-  final int? oldPrice;
-
-  Product({
-    required this.id,
+  TopProduct({
     required this.name,
-    required this.stock,
-    required this.threshold,
-    required this.price,
-    required this.category,
-    this.oldPrice,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'stock': stock,
-    'threshold': threshold,
-    'price': price,
-    'category': category,
-    'oldPrice': oldPrice,
-  };
-
-  factory Product.fromJson(Map<String, dynamic> json) => Product(
-    id: json['id'] ?? '',
-    name: json['name'] ?? '',
-    stock: json['stock'] ?? 0,
-    threshold: json['threshold'] ?? 0,
-    price: json['price'] ?? 0,
-    category: json['category'] ?? 'Grocery',
-    oldPrice: json['oldPrice'] ?? json['price'],
-  );
-}
-
-class Sale {
-  final String id;
-  final String productId;
-  final String productName;
-  final int quantity;
-  final int totalPrice;
-  final DateTime timestamp;
-
-  Sale({
-    required this.id,
-    required this.productId,
-    required this.productName,
     required this.quantity,
-    required this.totalPrice,
-    required this.timestamp,
+    required this.rank,
   });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'productId': productId,
-    'productName': productName,
-    'quantity': quantity,
-    'totalPrice': totalPrice,
-    'timestamp': timestamp.toIso8601String(),
-  };
-
-  factory Sale.fromJson(Map<String, dynamic> json) => Sale(
-    id: json['id'] ?? '',
-    productId: json['productId'] ?? '',
-    productName: json['productName'] ?? '',
-    quantity: json['quantity'] ?? 0,
-    totalPrice: json['totalPrice'] ?? 0,
-    timestamp: json['timestamp'] != null ? DateTime.parse(json['timestamp']) : DateTime.now(),
-  );
 }

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
 import '../utils/colors.dart';
 import '../utils/formatters.dart';
+import '../viewmodel/sale_viewmodel.dart';
+import '../model/sale_model.dart';
 import '../dialogs/confirmation_dialog.dart';
 import '../dialogs/edit_sale_dialog.dart';
 
@@ -16,124 +17,12 @@ class SalesHistoryScreen extends StatefulWidget {
 }
 
 class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
-  List<Sale> _sales = [];
-  List<Product> _products = [];
-  bool _isLoading = true;
-
   @override
   void initState() {
     super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-
-    final prefs = await SharedPreferences.getInstance();
-
-    // Load sales
-    final String? salesJson = prefs.getString('sales');
-    if (salesJson != null && salesJson.isNotEmpty) {
-      List<dynamic> decoded = json.decode(salesJson);
-      setState(() {
-        _sales = decoded.map((e) => Sale.fromJson(e)).toList();
-        // Sort by timestamp (newest first)
-        _sales.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-      });
-    }
-
-    // Load products to get current stock info
-    final String? productsJson = prefs.getString('products');
-    if (productsJson != null && productsJson.isNotEmpty) {
-      List<dynamic> decoded = json.decode(productsJson);
-      setState(() {
-        _products = decoded.map((e) => Product.fromJson(e)).toList();
-      });
-    }
-
-    setState(() => _isLoading = false);
-  }
-
-  Future<void> _deleteSale(Sale sale) async {
-    final prefs = await SharedPreferences.getInstance();
-
-    // Remove from sales list
-    _sales.removeWhere((s) => s.id == sale.id);
-    final String salesJson = json.encode(_sales.map((e) => e.toJson()).toList());
-    await prefs.setString('sales', salesJson);
-
-    // Restore stock to product
-    final productIndex = _products.indexWhere((p) => p.id == sale.productId);
-    if (productIndex != -1) {
-      _products[productIndex] = Product(
-        id: _products[productIndex].id,
-        name: _products[productIndex].name,
-        stock: _products[productIndex].stock + sale.quantity,
-        threshold: _products[productIndex].threshold,
-        price: _products[productIndex].price,
-        category: _products[productIndex].category,
-        oldPrice: _products[productIndex].oldPrice,
-      );
-
-      final String productsJson = json.encode(_products.map((e) => e.toJson()).toList());
-      await prefs.setString('products', productsJson);
-    }
-
-    await _loadData();
-    Fluttertoast.showToast(msg: "Sale deleted and stock restored");
-  }
-
-  Future<void> _editSale(Sale sale, int newQuantity) async {
-    final prefs = await SharedPreferences.getInstance();
-
-    // Calculate quantity difference
-    final int quantityDiff = newQuantity - sale.quantity;
-
-    // Check if enough stock for increase
-    final product = _products.firstWhere((p) => p.id == sale.productId);
-    if (quantityDiff > 0 && product.stock < quantityDiff) {
-      Fluttertoast.showToast(msg: "Not enough stock available");
-      return;
-    }
-
-    // Update product stock
-    final productIndex = _products.indexWhere((p) => p.id == sale.productId);
-    if (productIndex != -1) {
-      _products[productIndex] = Product(
-        id: _products[productIndex].id,
-        name: _products[productIndex].name,
-        stock: _products[productIndex].stock - quantityDiff,
-        threshold: _products[productIndex].threshold,
-        price: _products[productIndex].price,
-        category: _products[productIndex].category,
-        oldPrice: _products[productIndex].oldPrice,
-      );
-
-      final String productsJson = json.encode(_products.map((e) => e.toJson()).toList());
-      await prefs.setString('products', productsJson);
-    }
-
-    // Update sale record
-    final updatedSale = Sale(
-      id: sale.id,
-      productId: sale.productId,
-      productName: sale.productName,
-      quantity: newQuantity,
-      totalPrice: sale.unitPrice * newQuantity,
-      timestamp: sale.timestamp,
-      unitPrice: sale.unitPrice,
-    );
-
-    final index = _sales.indexWhere((s) => s.id == sale.id);
-    if (index != -1) {
-      _sales[index] = updatedSale;
-    }
-
-    final String salesJson = json.encode(_sales.map((e) => e.toJson()).toList());
-    await prefs.setString('sales', salesJson);
-
-    await _loadData();
-    Fluttertoast.showToast(msg: "Sale updated successfully");
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SaleViewModel>().getAllSales();
+    });
   }
 
   String _formatDate(DateTime date) {
@@ -142,6 +31,9 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final vm = context.watch<SaleViewModel>();
+    final sales = vm.sales ?? [];
+
     return Scaffold(
       backgroundColor: AppColor.background,
       appBar: AppBar(
@@ -159,13 +51,13 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: _loadData,
+            onPressed: () => vm.getAllSales(),
           ),
         ],
       ),
-      body: _isLoading
+      body: vm.loading
           ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
-          : _sales.isEmpty
+          : sales.isEmpty
           ? Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -191,18 +83,21 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
           ],
         ),
       )
-          : ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: _sales.length,
-        itemBuilder: (context, index) {
-          final sale = _sales[index];
-          return _buildSaleCard(sale);
-        },
+          : RefreshIndicator(
+        onRefresh: () => vm.getAllSales(),
+        child: ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: sales.length,
+          itemBuilder: (context, index) {
+            final sale = sales[index];
+            return _buildSaleCard(context, sale, vm);
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildSaleCard(Sale sale) {
+  Widget _buildSaleCard(BuildContext context, SaleModel sale, SaleViewModel vm) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -281,7 +176,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               TextButton.icon(
-                onPressed: () => _showEditDialog(sale),
+                onPressed: () => _showEditDialog(context, sale, vm),
                 icon: Icon(Icons.edit, size: 16, color: AppColor.primary),
                 label: Text(
                   "Edit",
@@ -290,7 +185,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
               ),
               const SizedBox(width: 8),
               TextButton.icon(
-                onPressed: () => _showDeleteConfirmation(sale),
+                onPressed: () => _showDeleteConfirmation(context, sale, vm),
                 icon: Icon(Icons.delete, size: 16, color: AppColor.error),
                 label: Text(
                   "Delete",
@@ -304,7 +199,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     );
   }
 
-  void _showEditDialog(Sale sale) {
+  void _showEditDialog(BuildContext context, SaleModel sale, SaleViewModel vm) {
     showDialog(
       context: context,
       builder: (context) => EditSaleDialog(
@@ -312,12 +207,14 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
         currentQuantity: sale.quantity,
         currentTotalPrice: sale.totalPrice,
         unitPrice: sale.unitPrice,
-        onSave: (newQuantity) => _editSale(sale, newQuantity),
+        onSave: (newQuantity) async {
+          await vm.updateSale(sale.id, newQuantity);
+        },
       ),
     );
   }
 
-  void _showDeleteConfirmation(Sale sale) {
+  void _showDeleteConfirmation(BuildContext context, SaleModel sale, SaleViewModel vm) {
     showDialog(
       context: context,
       builder: (context) => ConfirmationDialog(
@@ -325,89 +222,8 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
         message: "Are you sure you want to delete this sale? Stock will be restored.",
         confirmText: "Delete",
         confirmColor: AppColor.error,
-        onConfirm: () => _deleteSale(sale),
+        onConfirm: () => vm.deleteSale(sale.id),
       ),
     );
   }
-}
-
-// ==================== MODELS ====================
-class Sale {
-  final String id;
-  final String productId;
-  final String productName;
-  final int quantity;
-  final int totalPrice;
-  final DateTime timestamp;
-  final int unitPrice;
-
-  Sale({
-    required this.id,
-    required this.productId,
-    required this.productName,
-    required this.quantity,
-    required this.totalPrice,
-    required this.timestamp,
-    required this.unitPrice,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'productId': productId,
-    'productName': productName,
-    'quantity': quantity,
-    'totalPrice': totalPrice,
-    'timestamp': timestamp.toIso8601String(),
-    'unitPrice': unitPrice,
-  };
-
-  factory Sale.fromJson(Map<String, dynamic> json) => Sale(
-    id: json['id'] ?? '',
-    productId: json['productId'] ?? '',
-    productName: json['productName'] ?? '',
-    quantity: json['quantity'] ?? 0,
-    totalPrice: json['totalPrice'] ?? 0,
-    timestamp: json['timestamp'] != null ? DateTime.parse(json['timestamp']) : DateTime.now(),
-    unitPrice: json['unitPrice'] ?? (json['totalPrice'] / json['quantity']).round(),
-  );
-}
-
-class Product {
-  final String id;
-  final String name;
-  int stock;
-  final int threshold;
-  final int price;
-  final String category;
-  final int? oldPrice;
-
-  Product({
-    required this.id,
-    required this.name,
-    required this.stock,
-    required this.threshold,
-    required this.price,
-    required this.category,
-    this.oldPrice,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'stock': stock,
-    'threshold': threshold,
-    'price': price,
-    'category': category,
-    'oldPrice': oldPrice,
-  };
-
-  factory Product.fromJson(Map<String, dynamic> json) => Product(
-    id: json['id'] ?? '',
-    name: json['name'] ?? '',
-    stock: json['stock'] ?? 0,
-    threshold: json['threshold'] ?? 0,
-    price: json['price'] ?? 0,
-    category: json['category'] ?? '',
-    oldPrice: json['oldPrice'] ?? json['price'],
-  );
 }

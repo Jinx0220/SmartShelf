@@ -1,20 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:smartshelf/view/navigation_screen.dart';
+import 'package:provider/provider.dart';
 import '../utils/colors.dart';
+import '../viewmodel/auth_viewmodel.dart';
 import 'login_screen.dart';
-
+import 'navigation_screen.dart';
 
 class OTPScreen extends StatefulWidget {
   final String phoneNumber;
   final bool fromRegister;
+  final bool isResetPassword;
 
   const OTPScreen({
     super.key,
     required this.phoneNumber,
     this.fromRegister = false,
+    this.isResetPassword = false,
   });
 
   @override
@@ -31,6 +33,9 @@ class _OTPScreenState extends State<OTPScreen> {
   void initState() {
     super.initState();
     _startTimer();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AuthViewModel>().clearError();
+    });
   }
 
   @override
@@ -43,15 +48,6 @@ class _OTPScreenState extends State<OTPScreen> {
     }
     super.dispose();
   }
-
-  // ==================== DATA METHODS (Future Firebase Ready) ====================
-
-  Future<void> _saveLoginState(bool isLoggedIn) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool("isLoggedIn", isLoggedIn);
-  }
-
-  // ==================== OTP METHODS ====================
 
   void _startTimer() {
     Future.delayed(const Duration(seconds: 1), () {
@@ -68,44 +64,10 @@ class _OTPScreenState extends State<OTPScreen> {
     });
   }
 
-  void _verifyOTP() async {
-    String otp = otpControllers.map((c) => c.text).join();
-
-    if (otp.length != 6) {
-      Fluttertoast.showToast(msg: "Please enter the 6-digit OTP");
-      return;
-    }
-
-    // Demo OTP - accepts "123456" for testing
-    if (otp == "123456") {
-      Fluttertoast.showToast(msg: "Verification Successful");
-
-      if (widget.fromRegister) {
-        await _saveLoginState(true);
-
-        if (mounted) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
-                (route) => false,
-          );
-        }
-      } else {
-        if (mounted) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-                (route) => false,
-          );
-        }
-      }
-    } else {
-      Fluttertoast.showToast(msg: "Invalid OTP. Please try again.");
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    final vm = context.watch<AuthViewModel>();
+
     return Scaffold(
       backgroundColor: AppColor.background,
       appBar: AppBar(
@@ -125,7 +87,6 @@ class _OTPScreenState extends State<OTPScreen> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 const SizedBox(height: 40),
-
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
@@ -138,39 +99,37 @@ class _OTPScreenState extends State<OTPScreen> {
                     color: AppColor.primary,
                   ),
                 ),
-
                 const SizedBox(height: 30),
-
                 Text(
-                  "Verify Your Number",
+                  widget.isResetPassword ? "Reset Password" : "Verify Your Number",
                   style: GoogleFonts.spaceGrotesk(
                     color: AppColor.primary,
                     fontWeight: FontWeight.w700,
                     fontSize: 24,
                   ),
                 ),
-
                 const SizedBox(height: 10),
-
                 Text(
-                  "We have sent a 6-digit verification code to",
+                  widget.isResetPassword
+                      ? "Enter the OTP sent to your phone to reset password"
+                      : "We have sent a 6-digit verification code to",
                   style: GoogleFonts.manrope(
                     color: AppColor.secondary,
                     fontSize: 14,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  widget.phoneNumber,
-                  style: GoogleFonts.manrope(
-                    color: AppColor.primary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
+                if (!widget.isResetPassword) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.phoneNumber,
+                    style: GoogleFonts.manrope(
+                      color: AppColor.primary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
                   ),
-                ),
-
+                ],
                 const SizedBox(height: 40),
-
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: List.generate(6, (index) {
@@ -212,14 +171,49 @@ class _OTPScreenState extends State<OTPScreen> {
                     );
                   }),
                 ),
-
                 const SizedBox(height: 30),
-
                 SizedBox(
                   width: double.infinity,
                   height: 50,
-                  child: ElevatedButton(
-                    onPressed: _verifyOTP,
+                  child: vm.loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : ElevatedButton(
+                    onPressed: () async {
+                      String otp = otpControllers.map((c) => c.text).join();
+                      if (otp.length != 6) {
+                        Fluttertoast.showToast(msg: "Please enter the 6-digit OTP");
+                        return;
+                      }
+
+                      bool success;
+                      if (widget.isResetPassword) {
+                        success = await vm.verifyOTPForReset(otp);
+                        if (success && mounted) {
+                          Fluttertoast.showToast(msg: "OTP Verified. Please reset your password.");
+                          // Navigate to reset password screen or show dialog
+                          _showResetPasswordDialog(context, vm);
+                        }
+                      } else {
+                        success = await vm.verifyOTP(otp);
+                        if (success && mounted) {
+                          Fluttertoast.showToast(msg: "Verification Successful");
+                          if (widget.fromRegister) {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
+                            );
+                          } else {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(builder: (context) => const LoginScreen()),
+                            );
+                          }
+                        }
+                      }
+                      if (!success && mounted) {
+                        Fluttertoast.showToast(msg: vm.error ?? "Invalid OTP. Please try again.");
+                      }
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColor.primary,
                       foregroundColor: AppColor.background,
@@ -229,7 +223,7 @@ class _OTPScreenState extends State<OTPScreen> {
                       elevation: 3,
                     ),
                     child: Text(
-                      "Verify OTP",
+                      widget.isResetPassword ? "Verify & Reset" : "Verify OTP",
                       style: GoogleFonts.spaceGrotesk(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -237,9 +231,7 @@ class _OTPScreenState extends State<OTPScreen> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 20),
-
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -260,12 +252,23 @@ class _OTPScreenState extends State<OTPScreen> {
                       ),
                     if (canResend)
                       GestureDetector(
-                        onTap: () {
+                        onTap: () async {
                           setState(() {
                             timerSeconds = 60;
                             canResend = false;
                             _startTimer();
                           });
+                          // Clear OTP fields
+                          for (var controller in otpControllers) {
+                            controller.clear();
+                          }
+                          FocusScope.of(context).requestFocus(focusNodes[0]);
+
+                          if (widget.isResetPassword) {
+                            await context.read<AuthViewModel>().sendPasswordResetOTP(widget.phoneNumber);
+                          } else {
+                            await context.read<AuthViewModel>().registerWithPhone(widget.phoneNumber, '', '', '');
+                          }
                           Fluttertoast.showToast(msg: "OTP resent to ${widget.phoneNumber}");
                         },
                         child: Text(
@@ -279,12 +282,126 @@ class _OTPScreenState extends State<OTPScreen> {
                       ),
                   ],
                 ),
-
                 const SizedBox(height: 40),
+                if (vm.error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      vm.error!,
+                      style: GoogleFonts.manrope(
+                        color: AppColor.error,
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showResetPasswordDialog(BuildContext context, AuthViewModel vm) {
+    final TextEditingController newPasswordController = TextEditingController();
+    final TextEditingController confirmPasswordController = TextEditingController();
+    bool isVisible = false;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          "Reset Password",
+          style: GoogleFonts.spaceGrotesk(
+            color: AppColor.primary,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: newPasswordController,
+              obscureText: !isVisible,
+              decoration: InputDecoration(
+                labelText: "New Password",
+                labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                suffixIcon: IconButton(
+                  onPressed: () {
+                    isVisible = !isVisible;
+                  },
+                  icon: Icon(
+                    isVisible ? Icons.visibility_off : Icons.visibility,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: confirmPasswordController,
+              obscureText: !isVisible,
+              decoration: InputDecoration(
+                labelText: "Confirm Password",
+                labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              "Cancel",
+              style: GoogleFonts.manrope(color: AppColor.secondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newPassword = newPasswordController.text.trim();
+              final confirmPassword = confirmPasswordController.text.trim();
+
+              if (newPassword.isEmpty || newPassword.length < 6) {
+                Fluttertoast.showToast(msg: "Password must be at least 6 characters");
+                return;
+              }
+              if (newPassword != confirmPassword) {
+                Fluttertoast.showToast(msg: "Passwords do not match");
+                return;
+              }
+
+              final success = await vm.resetPassword(widget.phoneNumber, newPassword);
+              if (success && mounted) {
+                Navigator.pop(context);
+                Navigator.pop(context); // Go back to login
+                Fluttertoast.showToast(msg: "Password reset successful. Please login.");
+              } else if (mounted) {
+                Fluttertoast.showToast(msg: vm.error ?? "Failed to reset password");
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColor.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(
+              "Reset Password",
+              style: GoogleFonts.manrope(color: Colors.white),
+            ),
+          ),
+        ],
       ),
     );
   }

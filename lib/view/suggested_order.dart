@@ -3,13 +3,13 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:provider/provider.dart';
 import '../utils/colors.dart';
 import '../viewmodel/order_viewmodel.dart';
-import '../viewmodel/prediction_viewmodel.dart';
+import '../model/order_model.dart';
+import 'order_history_screen.dart';
 
 class SuggestedOrderScreen extends StatefulWidget {
   const SuggestedOrderScreen({super.key});
@@ -29,10 +29,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
 
   Future<void> _loadData() async {
     final orderVm = context.read<OrderViewModel>();
-    final predictionVm = context.read<PredictionViewModel>();
-
-    // This will be implemented when other ViewModels are ready
-    // For now, show loading state
+    await orderVm.getAllOrders();
   }
 
   @override
@@ -54,6 +51,19 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
         elevation: 0,
         centerTitle: true,
         actions: [
+          // US-47: View Order History
+          IconButton(
+            icon: const Icon(Icons.history, color: Colors.white),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const OrderHistoryScreen(),
+                ),
+              );
+            },
+            tooltip: 'Order History',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _loadData,
@@ -129,7 +139,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                 itemCount: orderVm.currentOrder!.items.length,
                 itemBuilder: (context, index) {
                   final item = orderVm.currentOrder!.items[index];
-                  return _buildOrderCard(item, index, orderVm);
+                  return _buildOrderCard(item);
                 },
               ),
             ),
@@ -170,6 +180,30 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
                   ),
                 ),
                 const SizedBox(width: 12),
+                // US-46: Mark as Placed button
+                if (!orderVm.currentOrder!.isPlaced)
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _markOrderPlaced(orderVm),
+                      icon: const Icon(Icons.check_circle, color: Colors.white),
+                      label: Text(
+                        "Mark as Placed",
+                        style: GoogleFonts.manrope(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColor.warning,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: () => _showExportOptions(orderVm.currentOrder!, orderVm),
@@ -199,7 +233,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
     );
   }
 
-  Widget _buildOrderCard(OrderItemModel item, int index, OrderViewModel vm) {
+  Widget _buildOrderCard(OrderItemModel item) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
@@ -409,6 +443,26 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
     }
   }
 
+  // US-46: Mark order as placed
+  Future<void> _markOrderPlaced(OrderViewModel vm) async {
+    if (vm.currentOrder == null || vm.currentOrder!.id == null) {
+      Fluttertoast.showToast(msg: 'No order to mark as placed');
+      return;
+    }
+
+    setState(() {
+      vm.currentOrder!.isPlaced = true;
+      vm.currentOrder!.placedDate = DateTime.now();
+    });
+
+    final success = await vm.markOrderPlaced(vm.currentOrder!.id!);
+    if (success && mounted) {
+      Fluttertoast.showToast(msg: 'Order marked as placed! ✅');
+    } else if (mounted) {
+      Fluttertoast.showToast(msg: 'Failed to mark order as placed');
+    }
+  }
+
   void _showExportOptions(OrderModel order, OrderViewModel vm) {
     showModalBottomSheet(
       context: context,
@@ -432,21 +486,21 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
               ),
               const SizedBox(height: 20),
               _buildExportOption(
-                icon: FontAwesomeIcons.whatsapp,
+                icon: FaIcon(FontAwesomeIcons.whatsapp, color: const Color(0xFF25D366)),
                 title: "Share via WhatsApp",
                 color: const Color(0xFF25D366),
                 onTap: () => _shareToWhatsApp(order, vm),
               ),
               const SizedBox(height: 12),
               _buildExportOption(
-                icon: Icons.file_copy,
+                icon: Icon(Icons.file_copy, color: AppColor.primary),
                 title: "Save as CSV",
                 color: AppColor.primary,
                 onTap: () => _saveAsCSV(order, vm),
               ),
               const SizedBox(height: 12),
               _buildExportOption(
-                icon: Icons.copy,
+                icon: Icon(Icons.copy, color: AppColor.secondary),
                 title: "Copy to Clipboard",
                 color: AppColor.secondary,
                 onTap: () => _copyToClipboard(order, vm),
@@ -469,7 +523,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
   }
 
   Widget _buildExportOption({
-    required IconData icon,
+    required Widget icon,
     required String title,
     required Color color,
     required VoidCallback onTap,
@@ -488,7 +542,7 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
         ),
         child: Row(
           children: [
-            Icon(icon, color: color),
+            icon,
             const SizedBox(width: 12),
             Text(
               title,
@@ -517,7 +571,11 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
     File file = File(path);
     await file.writeAsString(csv);
     Fluttertoast.showToast(msg: "CSV saved");
-    await Share.shareXFiles([XFile(path)], text: "SmartShelf Order List");
+
+    await Share.shareXFiles(
+      [XFile(path)],
+      text: "SmartShelf Order List",
+    );
   }
 
   Future<void> _copyToClipboard(OrderModel order, OrderViewModel vm) async {

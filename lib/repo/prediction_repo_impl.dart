@@ -5,6 +5,10 @@ import '../model/sale_model.dart';
 import '../services/ai_prediction_service.dart';
 import '../services/firebase_services.dart';
 import 'prediction_repo.dart';
+import 'sale_repo_impl.dart';
+import 'settings_repo_impl.dart';
+import 'product_repo_impl.dart';
+
 
 class PredictionRepoImpl implements PredictionRepo {
   final CollectionReference _collection =
@@ -54,76 +58,131 @@ class PredictionRepoImpl implements PredictionRepo {
 
   @override
   Future<List<PredictionModel>> getAllPredictions() async {
-    final snapshot = await _collection.get();
-    return snapshot.docs
-        .map((doc) => PredictionModel.fromMap(doc.data() as Map<String, dynamic>)
-      ..id = doc.id)
-        .toList();
+    try {
+      final snapshot = await _collection.get();
+      return snapshot.docs
+          .map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return PredictionModel.fromMap(data)..id = doc.id;
+      })
+          .toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   @override
   Future<PredictionModel?> getPredictionForProduct(String productId) async {
-    final snapshot = await _collection
-        .where('productId', isEqualTo: productId)
-        .limit(1)
-        .get();
+    try {
+      final snapshot = await _collection
+          .where('productId', isEqualTo: productId)
+          .limit(1)
+          .get();
 
-    if (snapshot.docs.isEmpty) return null;
+      if (snapshot.docs.isEmpty) return null;
 
-    final doc = snapshot.docs.first;
-    return PredictionModel.fromMap(doc.data() as Map<String, dynamic>)
-      ..id = doc.id;
+      final doc = snapshot.docs.first;
+      final data = doc.data() as Map<String, dynamic>;
+      return PredictionModel.fromMap(data)..id = doc.id;
+    } catch (e) {
+      return null;
+    }
   }
 
   @override
   Future<void> updatePrediction(String productId, int newQuantity) async {
-    final snapshot = await _collection
-        .where('productId', isEqualTo: productId)
-        .limit(1)
-        .get();
+    try {
+      final snapshot = await _collection
+          .where('productId', isEqualTo: productId)
+          .limit(1)
+          .get();
 
-    if (snapshot.docs.isNotEmpty) {
-      await snapshot.docs.first.reference.update({
-        'predictedQuantity': newQuantity,
-      });
+      if (snapshot.docs.isNotEmpty) {
+        await snapshot.docs.first.reference.update({
+          'predictedQuantity': newQuantity,
+        });
+      }
+    } catch (e) {
+      throw Exception('Failed to update prediction: $e');
     }
   }
 
   @override
   Future<void> deletePrediction(String productId) async {
-    final snapshot = await _collection
-        .where('productId', isEqualTo: productId)
-        .get();
+    try {
+      final snapshot = await _collection
+          .where('productId', isEqualTo: productId)
+          .get();
 
-    for (var doc in snapshot.docs) {
-      await doc.reference.delete();
+      for (var doc in snapshot.docs) {
+        await doc.reference.delete();
+      }
+    } catch (e) {
+      throw Exception('Failed to delete prediction: $e');
     }
   }
 
   @override
   Future<Map<String, double>> getPredictionAccuracy() async {
-    final predictions = await getAllPredictions();
-    Map<String, double> accuracy = {};
+    try {
+      final predictions = await getAllPredictions();
+      final Map<String, double> accuracy = {};
 
-    for (var pred in predictions) {
-      if (pred.actualQuantity != null) {
-        accuracy[pred.productId] = _aiService.calculateAccuracy(
-          pred,
-          pred.actualQuantity!,
-        );
+      for (var prediction in predictions) {
+        if (prediction.actualQuantity != null) {
+          accuracy[prediction.productId] = _aiService.calculateAccuracy(
+            prediction,
+            prediction.actualQuantity!,
+          );
+        }
       }
+      return accuracy;
+    } catch (e) {
+      return {};
     }
-    return accuracy;
   }
 
   @override
   Future<void> retrainPredictions(String userId) async {
-    final snapshot = await _collection
-        .where('userId', isEqualTo: userId)
-        .get();
+    try {
+      final productRepo = ProductRepoImpl();
+      final saleRepo = SaleRepoImpl();
 
-    for (var doc in snapshot.docs) {
-      await doc.reference.delete();
+      // ✅ Explicitly cast to ensure type consistency
+      final List<ProductModel> products = await productRepo.getAllProduct();
+      final List<SaleModel> sales = await saleRepo.getAllSales();
+
+      final settingsRepo = SettingsRepoImpl();
+      final int weeklyOffDay = await settingsRepo.getWeeklyOffDay();
+
+      final List<PredictionModel> predictions = _aiService.generateAllPredictions(
+        products,
+        sales,
+        weeklyOffDay,
+      );
+
+      // Delete old predictions
+      final snapshot = await _collection
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      for (var doc in snapshot.docs) {
+        await doc.reference.delete();
+      }
+
+      // Save new predictions
+      await savePredictions(predictions);
+    } catch (e) {
+      throw Exception('Failed to retrain predictions: $e');
+    }
+  }
+
+  // US-38: Auto-retrain nightly
+  Future<void> autoRetrainNightly() async {
+    try {
+      await retrainPredictions('current_user_id');
+    } catch (e) {
+      // Log error
     }
   }
 }

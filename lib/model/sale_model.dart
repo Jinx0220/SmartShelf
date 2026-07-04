@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SaleModel {
-  final String? id;
+  final String id;
   final String productId;
   final String productName;
   final int quantity;
@@ -11,7 +11,7 @@ class SaleModel {
   final String? notes;
 
   SaleModel({
-    this.id,
+    required this.id,
     required this.productId,
     required this.productName,
     required this.quantity,
@@ -23,6 +23,7 @@ class SaleModel {
 
   Map<String, dynamic> toMap() {
     return {
+      'id': id,
       'productId': productId,
       'productName': productName,
       'quantity': quantity,
@@ -33,15 +34,15 @@ class SaleModel {
     };
   }
 
-  factory SaleModel.fromMap(Map<String, dynamic> map, {String? id}) {
+  factory SaleModel.fromMap(Map<String, dynamic> map) {
     return SaleModel(
-      id: id ?? map['id'] as String?,
-      productId: map['productId'] as String,
-      productName: map['productName'] as String,
-      quantity: map['quantity'] as int,
-      totalPrice: map['totalPrice'] as int,
-      unitPrice: map['unitPrice'] as int,
-      timestamp: (map['timestamp'] as Timestamp).toDate(),
+      id: map['id'] as String? ?? '',
+      productId: map['productId'] as String? ?? '',
+      productName: map['productName'] as String? ?? '',
+      quantity: map['quantity'] as int? ?? 0,
+      totalPrice: map['totalPrice'] as int? ?? 0,
+      unitPrice: map['unitPrice'] as int? ?? 0,
+      timestamp: (map['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
       notes: map['notes'] as String?,
     );
   }

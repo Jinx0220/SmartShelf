@@ -27,7 +27,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ProductViewModel>().getAllProduct();
       context.read<SaleViewModel>().getAllSales();
-      context.read<AuthViewModel>().getUserProfile();
+      context.read<AuthViewModel>().loadCurrentUser();
     });
   }
 
@@ -50,9 +50,8 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
 
     final products = productVm.allProducts ?? [];
     final sales = saleVm.sales ?? [];
-    final user = authVm.currentUser;
+    final user = authVm.user;
 
-    // Calculate dashboard data
     final today = DateTime.now();
     final todayStart = DateTime(today.year, today.month, today.day);
     final weekAgo = todayStart.subtract(const Duration(days: 7));
@@ -80,22 +79,29 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     for (int i = 0; i < sortedProducts.length && i < 5; i++) {
       final product = products.firstWhere(
             (p) => p.id == sortedProducts[i].key,
-        orElse: () => ProductModel(id: '', name: 'Unknown'),
+        orElse: () => ProductModel(
+          id: '',
+          name: 'Unknown',
+          price: 0.0,
+          stock: 0,
+          threshold: 0,
+          category: 'Unknown',
+        ),
       );
       topProducts.add(TopProduct(
-        name: product.name ?? 'Unknown',
+        name: product.name,
         quantity: sortedProducts[i].value,
         rank: i + 1,
       ));
     }
 
-    // Critical products (stock <= threshold)
+    // Critical products
     final criticalProducts = products
         .where((p) => p.isLowStock)
         .map((p) => CriticalProduct(
-      name: p.name ?? '',
-      stock: p.stock ?? 0,
-      threshold: p.threshold ?? 0,
+      name: p.name,
+      stock: p.stock,
+      threshold: p.threshold,
       productId: p.id ?? '',
     ))
         .toList()
@@ -110,6 +116,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
           await productVm.getAllProduct();
           await saleVm.getAllSales();
         },
+        color: AppColor.primary,
         child: isLoading
             ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
             : SafeArea(
@@ -168,11 +175,14 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
                   children: [
                     Text(
                       '$greeting,',
-                      style: const TextStyle(fontSize: 14, color: Colors.white70),
+                      style: GoogleFonts.manrope(
+                        fontSize: 14,
+                        color: Colors.white70,
+                      ),
                     ),
                     Text(
                       storeName,
-                      style: const TextStyle(
+                      style: GoogleFonts.spaceGrotesk(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
                         color: Colors.white,
@@ -207,7 +217,10 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
                 const SizedBox(width: 6),
                 Text(
                   _getFormattedDate(),
-                  style: const TextStyle(fontSize: 12, color: Colors.white70),
+                  style: GoogleFonts.manrope(
+                    fontSize: 12,
+                    color: Colors.white70,
+                  ),
                 ),
               ],
             ),
@@ -615,21 +628,23 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
             TextField(
               controller: quantityController,
               keyboardType: TextInputType.number,
+              style: GoogleFonts.manrope(fontSize: 16, color: AppColor.neutral),
               decoration: InputDecoration(
                 labelText: "Order Quantity",
                 labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide(color: Colors.grey.shade300),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide(color: Colors.grey.shade300),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                   borderSide: const BorderSide(color: AppColor.primary, width: 2),
                 ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 suffixText: "units",
                 suffixStyle: GoogleFonts.manrope(color: AppColor.secondary),
               ),
@@ -648,20 +663,18 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
             onPressed: () async {
               int orderQty = int.tryParse(quantityController.text) ?? 0;
               if (orderQty > 0) {
-                // Update product stock
                 final productVm = context.read<ProductViewModel>();
                 final products = productVm.allProducts ?? [];
                 final index = products.indexWhere((p) => p.id == product.productId);
                 if (index != -1) {
                   final updated = products[index].copyWith(
-                    stock: (products[index].stock ?? 0) + orderQty,
+                    stock: products[index].stock + orderQty,
                   );
                   await productVm.updateProduct(updated);
                 }
                 if (mounted) {
                   Navigator.pop(context);
                   Fluttertoast.showToast(msg: "Ordered $orderQty x ${product.name}");
-                  // Refresh dashboard
                   await productVm.getAllProduct();
                 }
               } else {
@@ -701,6 +714,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
                 style: GoogleFonts.spaceGrotesk(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
+                  color: Colors.white,
                 ),
               ),
               style: ElevatedButton.styleFrom(
@@ -728,6 +742,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
                 style: GoogleFonts.spaceGrotesk(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
+                  color: AppColor.primary,
                 ),
               ),
               style: OutlinedButton.styleFrom(

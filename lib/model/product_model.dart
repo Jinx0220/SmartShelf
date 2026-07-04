@@ -7,7 +7,7 @@ class ProductModel {
   final int stock;
   final int threshold;
   final String category;
-  final int? oldPrice;
+  final double? oldPrice;
   final String? imageUrl;
   final bool isDiscontinued;
   final DateTime createdAt;
@@ -23,15 +23,17 @@ class ProductModel {
     this.oldPrice,
     this.imageUrl,
     this.isDiscontinued = false,
-    required this.createdAt,
-    required this.updatedAt,
-  });
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  })  : createdAt = createdAt ?? DateTime.now(),
+        updatedAt = updatedAt ?? DateTime.now();
 
   bool get isLowStock => stock <= threshold;
   bool get isOutOfStock => stock == 0;
 
   Map<String, dynamic> toMap() {
     return {
+      'id': id,
       'name': name,
       'price': price,
       'stock': stock,
@@ -45,19 +47,19 @@ class ProductModel {
     };
   }
 
-  factory ProductModel.fromMap(Map<String, dynamic> map, {String? id}) {
+  factory ProductModel.fromMap(Map<String, dynamic> map) {
     return ProductModel(
-      id: id ?? map['id'] as String?,
-      name: map['name'] as String,
-      price: (map['price'] as num).toDouble(),
-      stock: map['stock'] as int,
-      threshold: map['threshold'] as int,
-      category: map['category'] as String,
-      oldPrice: map['oldPrice'] as int?,
+      id: map['id'] as String?,
+      name: map['name'] as String? ?? '',
+      price: (map['price'] as num?)?.toDouble() ?? 0.0,
+      stock: map['stock'] as int? ?? 0,
+      threshold: map['threshold'] as int? ?? 0,
+      category: map['category'] as String? ?? '',
+      oldPrice: (map['oldPrice'] as num?)?.toDouble(),
       imageUrl: map['imageUrl'] as String?,
       isDiscontinued: map['isDiscontinued'] as bool? ?? false,
-      createdAt: (map['createdAt'] as Timestamp).toDate(),
-      updatedAt: (map['updatedAt'] as Timestamp).toDate(),
+      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      updatedAt: (map['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 
@@ -68,7 +70,7 @@ class ProductModel {
     int? stock,
     int? threshold,
     String? category,
-    int? oldPrice,
+    double? oldPrice,
     String? imageUrl,
     bool? isDiscontinued,
     DateTime? createdAt,

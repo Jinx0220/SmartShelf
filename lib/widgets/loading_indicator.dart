@@ -4,11 +4,13 @@ import '../utils/colors.dart';
 class LoadingIndicator extends StatelessWidget {
   final String? message;
   final bool fullScreen;
+  final Color? color;
 
   const LoadingIndicator({
     super.key,
     this.message,
     this.fullScreen = true,
+    this.color,
   });
 
   @override
@@ -17,8 +19,8 @@ class LoadingIndicator extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(
-            color: AppColor.primary,
+          CircularProgressIndicator(
+            color: color ?? AppColor.primary,
           ),
           if (message != null) ...[
             const SizedBox(height: 16),

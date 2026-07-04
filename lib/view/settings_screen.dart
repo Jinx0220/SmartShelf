@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+
 import '../utils/colors.dart';
+import '../utils/helpers.dart';
 import '../viewmodel/auth_viewmodel.dart';
 import '../viewmodel/settings_viewmodel.dart';
 import '../viewmodel/product_viewmodel.dart';
 import '../viewmodel/sale_viewmodel.dart';
+import '../model/user_model.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -19,7 +22,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _storeNameController = TextEditingController();
   final TextEditingController _storeAddressController = TextEditingController();
 
@@ -27,7 +29,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AuthViewModel>().getUserProfile();
+      context.read<AuthViewModel>().loadCurrentUser();
       context.read<SettingsViewModel>().loadSettings();
     });
   }
@@ -36,17 +38,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
-    _phoneController.dispose();
     _storeNameController.dispose();
     _storeAddressController.dispose();
     super.dispose();
+  }
+
+  String _getDayLabel(int day) {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days[day];
+  }
+
+  int _getDayIndex(String day) {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days.indexOf(day);
   }
 
   @override
   Widget build(BuildContext context) {
     final authVm = context.watch<AuthViewModel>();
     final settingsVm = context.watch<SettingsViewModel>();
-    final user = authVm.currentUser;
+
+    final user = authVm.user;
 
     return Scaffold(
       backgroundColor: AppColor.background,
@@ -67,36 +79,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
           : ListView(
         children: [
-          // Account Section
           _buildSectionHeader('Account'),
+
           _buildSettingsTile(
             icon: Icons.person_outline,
             title: 'Profile Information',
             subtitle: user?.fullName ?? 'Not set',
             onTap: () => _navigateToProfile(context, user),
           ),
+
           _buildSettingsTile(
             icon: Icons.store_outlined,
             title: 'Store Settings',
             subtitle: user?.storeName ?? 'Everest Kirana Store',
             onTap: () => _navigateToStoreSettings(context, user),
           ),
+
           const Divider(),
 
-          // Data Management Section
           _buildSectionHeader('Data Management'),
+
           _buildSettingsTile(
             icon: Icons.backup_outlined,
             title: 'Backup Data',
             subtitle: 'Coming soon',
             onTap: () => Fluttertoast.showToast(msg: 'Backup feature coming soon'),
           ),
+
           _buildSettingsTile(
             icon: Icons.restore_outlined,
             title: 'Restore Data',
             subtitle: 'Coming soon',
             onTap: () => Fluttertoast.showToast(msg: 'Restore feature coming soon'),
           ),
+
           _buildSettingsTile(
             icon: Icons.delete_outline,
             title: 'Delete All Data',
@@ -104,57 +120,74 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => _showDeleteConfirmation(context),
             textColor: AppColor.error,
           ),
+
           const Divider(),
 
-          // Preferences Section
-          _buildSectionHeader('Preferences'),
-          _buildDropdownTile(
-            icon: Icons.attach_money,
-            title: 'Currency',
-            value: settingsVm.currency,
-            items: ['NPR', 'USD', 'INR', 'EUR'],
-            onChanged: (value) async {
-              if (value != null) {
-                await settingsVm.saveCurrency(value);
-                Fluttertoast.showToast(msg: 'Currency changed to $value');
-              }
-            },
+          ListTile(
+            leading: Icon(Icons.attach_money, color: AppColor.secondary),
+            title: Text(
+              'Currency',
+              style: GoogleFonts.manrope(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: AppColor.neutral,
+              ),
+            ),
+            trailing: Text(
+              'NPR',
+              style: GoogleFonts.manrope(
+                fontSize: 14,
+                color: AppColor.secondary,
+              ),
+            ),
+            onTap: null,
           ),
-          _buildDropdownTile(
-            icon: Icons.language,
-            title: 'Language',
-            value: settingsVm.language,
-            items: ['English', 'Nepali', 'Hindi'],
-            onChanged: (value) async {
-              if (value != null) {
-                await settingsVm.saveLanguage(value);
-                Fluttertoast.showToast(msg: 'Language changed to $value');
-              }
-            },
+
+          ListTile(
+            leading: Icon(Icons.language, color: AppColor.secondary),
+            title: Text(
+              'Language',
+              style: GoogleFonts.manrope(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: AppColor.neutral,
+              ),
+            ),
+            trailing: Text(
+              'English',
+              style: GoogleFonts.manrope(
+                fontSize: 14,
+                color: AppColor.secondary,
+              ),
+            ),
+            onTap: null,
           ),
+
           _buildDropdownTile(
             icon: Icons.calendar_today,
             title: 'Weekly Off Day',
-            value: settingsVm.weeklyOffDay.toString(),
-            items: ['0 (Sunday)', '1 (Monday)', '2 (Tuesday)', '3 (Wednesday)', '4 (Thursday)', '5 (Friday)', '6 (Saturday)'],
+            value: _getDayLabel(settingsVm.weeklyOffDay),
+            items: const ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
             onChanged: (value) async {
               if (value != null) {
-                final day = int.tryParse(value.split(' ').first) ?? 0;
+                final day = _getDayIndex(value);
                 await settingsVm.saveWeeklyOffDay(day);
-                Fluttertoast.showToast(msg: 'Weekly off day updated');
+                Fluttertoast.showToast(msg: 'Weekly off updated');
               }
             },
           ),
+
           const Divider(),
 
-          // About Section
           _buildSectionHeader('About'),
+
           _buildSettingsTile(
             icon: Icons.info_outline,
             title: 'About SmartShelf',
             subtitle: 'Version 1.0.0',
             onTap: _showAboutDialog,
           ),
+
           _buildSettingsTile(
             icon: Icons.logout,
             title: 'Logout',
@@ -162,6 +195,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => _showLogoutConfirmation(context),
             textColor: AppColor.error,
           ),
+
           const SizedBox(height: 32),
         ],
       ),
@@ -196,6 +230,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         style: GoogleFonts.manrope(
           color: textColor ?? AppColor.neutral,
           fontWeight: FontWeight.w500,
+          fontSize: 15,
         ),
       ),
       subtitle: Text(
@@ -205,7 +240,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           color: AppColor.secondary,
         ),
       ),
-      trailing: const Icon(Icons.chevron_right, color: AppColor.secondary),
+      trailing: Icon(Icons.chevron_right, color: AppColor.secondary),
       onTap: onTap,
     );
   }
@@ -221,15 +256,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
       leading: Icon(icon, color: AppColor.secondary),
       title: Text(
         title,
-        style: GoogleFonts.manrope(color: AppColor.neutral),
+        style: GoogleFonts.manrope(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: AppColor.neutral,
+        ),
       ),
       trailing: DropdownButton<String>(
         value: value,
         dropdownColor: AppColor.background,
-        style: GoogleFonts.manrope(color: AppColor.neutral),
-        items: items.map((item) {
-          return DropdownMenuItem(value: item, child: Text(item));
-        }).toList(),
+        style: GoogleFonts.manrope(
+          fontSize: 14,
+          color: AppColor.neutral,
+        ),
+        items: items.map((e) => DropdownMenuItem(
+          value: e,
+          child: Text(e, style: GoogleFonts.manrope()),
+        )).toList(),
         onChanged: onChanged,
         underline: const SizedBox(),
         icon: Icon(Icons.arrow_drop_down, color: AppColor.primary),
@@ -237,10 +280,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _navigateToProfile(BuildContext context, User? user) {
+  // ---------------- PROFILE ----------------
+
+  void _navigateToProfile(BuildContext context, UserModel? user) {
     _nameController.text = user?.fullName ?? '';
     _emailController.text = user?.email ?? '';
-    _phoneController.text = user?.phone ?? '';
 
     showDialog(
       context: context,
@@ -254,80 +298,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
             color: AppColor.primary,
           ),
         ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: _nameController,
-                  decoration: InputDecoration(
-                    labelText: 'Full Name',
-                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColor.primary, width: 2),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameController,
+              style: GoogleFonts.manrope(fontSize: 16, color: AppColor.neutral),
+              decoration: InputDecoration(
+                labelText: 'Full Name',
+                labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(
-                    labelText: 'Email Address',
-                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColor.primary, width: 2),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    labelText: 'Phone Number',
-                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
-                    prefixText: '+977 ',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColor.primary, width: 2),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppColor.primary, width: 2),
                 ),
-              ],
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
             ),
-          ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _emailController,
+              style: GoogleFonts.manrope(fontSize: 16, color: AppColor.neutral),
+              decoration: InputDecoration(
+                labelText: 'Email',
+                labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppColor.primary, width: 2),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -340,16 +357,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ElevatedButton(
             onPressed: () async {
               final authVm = context.read<AuthViewModel>();
-              final success = await authVm.updateProfile(
+
+              final updatedUser = user!.copyWith(
                 fullName: _nameController.text.trim(),
                 email: _emailController.text.trim(),
-                phone: _phoneController.text.trim(),
               );
-              if (success && mounted) {
+
+              final success = await authVm.updateProfile(updatedUser);
+
+              if (!mounted) return;
+
+              if (success) {
                 Navigator.pop(context);
                 Fluttertoast.showToast(msg: 'Profile updated successfully');
-              } else if (mounted) {
-                Fluttertoast.showToast(msg: authVm.error ?? 'Failed to update profile');
+              } else {
+                Fluttertoast.showToast(msg: authVm.error ?? 'Failed');
               }
             },
             style: ElevatedButton.styleFrom(
@@ -366,7 +388,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _navigateToStoreSettings(BuildContext context, User? user) {
+  // ---------------- STORE SETTINGS ----------------
+
+  void _navigateToStoreSettings(BuildContext context, UserModel? user) {
     _storeNameController.text = user?.storeName ?? '';
     _storeAddressController.text = user?.storeAddress ?? '';
 
@@ -382,57 +406,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
             color: AppColor.primary,
           ),
         ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: _storeNameController,
-                  decoration: InputDecoration(
-                    labelText: 'Store Name',
-                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColor.primary, width: 2),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _storeNameController,
+              style: GoogleFonts.manrope(fontSize: 16, color: AppColor.neutral),
+              decoration: InputDecoration(
+                labelText: 'Store Name',
+                labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _storeAddressController,
-                  decoration: InputDecoration(
-                    labelText: 'Store Address',
-                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColor.primary, width: 2),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  ),
-                  maxLines: 2,
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
                 ),
-              ],
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppColor.primary, width: 2),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
             ),
-          ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _storeAddressController,
+              style: GoogleFonts.manrope(fontSize: 16, color: AppColor.neutral),
+              decoration: InputDecoration(
+                labelText: 'Store Address',
+                labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppColor.primary, width: 2),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -445,15 +465,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ElevatedButton(
             onPressed: () async {
               final authVm = context.read<AuthViewModel>();
-              final success = await authVm.updateStoreSettings(
+
+              final updatedUser = user!.copyWith(
                 storeName: _storeNameController.text.trim(),
                 storeAddress: _storeAddressController.text.trim(),
               );
-              if (success && mounted) {
+
+              final success = await authVm.updateProfile(updatedUser);
+
+              if (!mounted) return;
+
+              if (success) {
                 Navigator.pop(context);
-                Fluttertoast.showToast(msg: 'Store settings updated successfully');
-              } else if (mounted) {
-                Fluttertoast.showToast(msg: authVm.error ?? 'Failed to update store settings');
+                Fluttertoast.showToast(msg: 'Store updated successfully');
+              } else {
+                Fluttertoast.showToast(msg: authVm.error ?? 'Failed');
               }
             },
             style: ElevatedButton.styleFrom(
@@ -470,6 +496,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // ---------------- DELETE + LOGOUT ----------------
+
   void _showDeleteConfirmation(BuildContext context) {
     showDialog(
       context: context,
@@ -484,7 +512,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         content: Text(
-          'This will delete ALL products and sales. This action cannot be undone. Are you sure?',
+          'This will permanently delete all your products and sales data. This action cannot be undone.',
           style: GoogleFonts.manrope(fontSize: 14, color: AppColor.neutral),
         ),
         actions: [
@@ -500,14 +528,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               final productVm = context.read<ProductViewModel>();
               final saleVm = context.read<SaleViewModel>();
 
-              // Delete all products and sales
-              final products = productVm.allProducts ?? [];
-              for (var product in products) {
-                await productVm.deleteproduct(product.id ?? '');
+              for (var p in productVm.allProducts ?? []) {
+                await productVm.deleteProduct(p.id ?? '');
               }
-              final sales = saleVm.sales ?? [];
-              for (var sale in sales) {
-                await saleVm.deleteSale(sale.id);
+              for (var s in saleVm.sales ?? []) {
+                await saleVm.deleteSale(s.id);
               }
 
               if (mounted) {
@@ -520,7 +545,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             child: Text(
-              'Delete All',
+              'Delete',
               style: GoogleFonts.manrope(color: Colors.white),
             ),
           ),
@@ -558,13 +583,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: () async {
               final authVm = context.read<AuthViewModel>();
               await authVm.logout();
-              if (mounted) {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (context) => const LoginScreen()),
-                      (route) => false,
-                );
-              }
+
+              if (!mounted) return;
+
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    (route) => false,
+              );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColor.error,
@@ -614,16 +640,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 8),
-            Text(
-              'Features:\n'
-                  '• Inventory Management\n'
-                  '• AI-Powered Predictions\n'
-                  '• Sales Analytics\n'
-                  '• Export Orders (WhatsApp/CSV)',
-              style: GoogleFonts.manrope(fontSize: 12, color: AppColor.secondary),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
             Text(
               '© 2024 SmartShelf. All rights reserved.',
               style: GoogleFonts.manrope(fontSize: 12, color: AppColor.secondary),

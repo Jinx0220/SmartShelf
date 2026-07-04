@@ -9,10 +9,8 @@ class SaleRepoImpl implements SaleRepo {
   @override
   Future<void> addSale(SaleModel sale) async {
     try {
-      final docRef = _collection.doc();
-      final data = sale.toMap();
-      data['id'] = docRef.id;
-      await docRef.set(data);
+      final ref = _collection.doc(sale.id);
+      await ref.set(sale.toMap());
     } catch (e) {
       throw Exception('Failed to add sale: $e');
     }
@@ -30,9 +28,6 @@ class SaleRepoImpl implements SaleRepo {
   @override
   Future<void> updateSale(SaleModel sale) async {
     try {
-      if (sale.id == null) {
-        throw Exception('Sale ID is required for update');
-      }
       await _collection.doc(sale.id).update(sale.toMap());
     } catch (e) {
       throw Exception('Failed to update sale: $e');
@@ -42,31 +37,31 @@ class SaleRepoImpl implements SaleRepo {
   @override
   Future<List<SaleModel>> getAllSales() async {
     try {
-      final querySnapshot = await _collection
+      final snapshot = await _collection
           .orderBy('timestamp', descending: true)
           .get();
-      return querySnapshot.docs.map((doc) {
+      return snapshot.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
-        return SaleModel.fromMap(data, id: doc.id);
+        return SaleModel.fromMap(data);
       }).toList();
     } catch (e) {
-      throw Exception('Failed to get all sales: $e');
+      return [];
     }
   }
 
   @override
   Future<List<SaleModel>> getSalesForProduct(String productId) async {
     try {
-      final querySnapshot = await _collection
+      final snapshot = await _collection
           .where('productId', isEqualTo: productId)
           .orderBy('timestamp', descending: true)
           .get();
-      return querySnapshot.docs.map((doc) {
+      return snapshot.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
-        return SaleModel.fromMap(data, id: doc.id);
+        return SaleModel.fromMap(data);
       }).toList();
     } catch (e) {
-      throw Exception('Failed to get sales for product: $e');
+      return [];
     }
   }
 
@@ -74,20 +69,22 @@ class SaleRepoImpl implements SaleRepo {
   Future<int> getTodaySales() async {
     try {
       final now = DateTime.now();
-      final startOfDay = DateTime(now.year, now.month, now.day);
-      final endOfDay = startOfDay.add(const Duration(days: 1));
+      final today = DateTime(now.year, now.month, now.day);
+      final tomorrow = today.add(const Duration(days: 1));
 
-      final querySnapshot = await _collection
-          .where('timestamp', isGreaterThanOrEqualTo: startOfDay)
-          .where('timestamp', isLessThan: endOfDay)
+      final snapshot = await _collection
+          .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
+          .where('timestamp', isLessThan: Timestamp.fromDate(tomorrow))
           .get();
 
-      return querySnapshot.docs.fold<int>(
-        0,
-            (sum, doc) => sum + (doc.data() as Map<String, dynamic>)['totalPrice'] as int,
-      );
+      int total = 0;
+      for (var doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        total += data['totalPrice'] as int? ?? 0;
+      }
+      return total;
     } catch (e) {
-      throw Exception('Failed to get today sales: $e');
+      return 0;
     }
   }
 
@@ -95,19 +92,21 @@ class SaleRepoImpl implements SaleRepo {
   Future<int> getWeeklySales() async {
     try {
       final now = DateTime.now();
-      final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-      final startOfDay = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+      final today = DateTime(now.year, now.month, now.day);
+      final weekAgo = today.subtract(const Duration(days: 7));
 
-      final querySnapshot = await _collection
-          .where('timestamp', isGreaterThanOrEqualTo: startOfDay)
+      final snapshot = await _collection
+          .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(weekAgo))
           .get();
 
-      return querySnapshot.docs.fold<int>(
-        0,
-            (sum, doc) => sum + (doc.data() as Map<String, dynamic>)['totalPrice'] as int,
-      );
+      int total = 0;
+      for (var doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        total += data['totalPrice'] as int? ?? 0;
+      }
+      return total;
     } catch (e) {
-      throw Exception('Failed to get weekly sales: $e');
+      return 0;
     }
   }
 
@@ -115,58 +114,60 @@ class SaleRepoImpl implements SaleRepo {
   Future<int> getMonthlySales() async {
     try {
       final now = DateTime.now();
-      final startOfMonth = DateTime(now.year, now.month, 1);
+      final firstDayOfMonth = DateTime(now.year, now.month, 1);
 
-      final querySnapshot = await _collection
-          .where('timestamp', isGreaterThanOrEqualTo: startOfMonth)
+      final snapshot = await _collection
+          .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(firstDayOfMonth))
           .get();
 
-      return querySnapshot.docs.fold<int>(
-        0,
-            (sum, doc) => sum + (doc.data() as Map<String, dynamic>)['totalPrice'] as int,
-      );
+      int total = 0;
+      for (var doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        total += data['totalPrice'] as int? ?? 0;
+      }
+      return total;
     } catch (e) {
-      throw Exception('Failed to get monthly sales: $e');
+      return 0;
     }
   }
 
   @override
   Future<Map<String, int>> getTopProducts({int limit = 5}) async {
     try {
-      final allSales = await getAllSales();
-      final productSales = <String, int>{};
+      final sales = await getAllSales();
+      Map<String, int> productSales = {};
 
-      for (var sale in allSales) {
+      for (var sale in sales) {
         productSales[sale.productId] =
             (productSales[sale.productId] ?? 0) + sale.quantity;
       }
 
-      final sortedEntries = productSales.entries.toList()
+      final sorted = productSales.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
 
-      return Map.fromEntries(sortedEntries.take(limit));
+      return Map.fromEntries(sorted.take(limit));
     } catch (e) {
-      throw Exception('Failed to get top products: $e');
+      return {};
     }
   }
 
   @override
   Future<Map<String, int>> getBottomProducts({int limit = 5}) async {
     try {
-      final allSales = await getAllSales();
-      final productSales = <String, int>{};
+      final sales = await getAllSales();
+      Map<String, int> productSales = {};
 
-      for (var sale in allSales) {
+      for (var sale in sales) {
         productSales[sale.productId] =
             (productSales[sale.productId] ?? 0) + sale.quantity;
       }
 
-      final sortedEntries = productSales.entries.toList()
+      final sorted = productSales.entries.toList()
         ..sort((a, b) => a.value.compareTo(b.value));
 
-      return Map.fromEntries(sortedEntries.take(limit));
+      return Map.fromEntries(sorted.take(limit));
     } catch (e) {
-      throw Exception('Failed to get bottom products: $e');
+      return {};
     }
   }
 }

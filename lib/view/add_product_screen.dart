@@ -1,8 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import 'package:provider/provider.dart';
 import '../utils/colors.dart';
 import '../viewmodel/product_viewmodel.dart';
@@ -24,6 +24,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final TextEditingController thresholdController = TextEditingController();
   String selectedCategory = 'Grocery';
   File? _selectedImage;
+  String? _imageUrl;
 
   final List<String> categories = ['Grocery', 'Dairy', 'Beverages', 'Snacks', 'Electronics', 'Clothing'];
   final ImagePicker _picker = ImagePicker();
@@ -45,11 +46,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
     await vm.getProductById(widget.productId!);
     final product = vm.product;
     if (product != null) {
-      nameController.text = product.name ?? '';
-      priceController.text = product.price?.toString() ?? '';
-      stockController.text = product.stock?.toString() ?? '';
-      thresholdController.text = product.threshold?.toString() ?? '';
-      selectedCategory = product.category ?? 'Grocery';
+      nameController.text = product.name;
+      priceController.text = product.price.toString();
+      stockController.text = product.stock.toString();
+      thresholdController.text = product.threshold.toString();
+      selectedCategory = product.category;
+      _imageUrl = product.imageUrl;
     }
   }
 
@@ -58,6 +60,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     if (picked != null) {
       setState(() {
         _selectedImage = File(picked.path);
+        _imageUrl = picked.path;
       });
     }
   }
@@ -89,7 +92,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image Picker
+            // Image Picker - US-08
             Center(
               child: GestureDetector(
                 onTap: _pickImage,
@@ -107,7 +110,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     )
                         : null,
                   ),
-                  child: _selectedImage == null
+                  child: _selectedImage == null && _imageUrl == null
                       ? Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -346,6 +349,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
     final vm = context.read<ProductViewModel>();
     final isEditing = widget.productId != null;
 
+    String? imageUrl = _imageUrl;
+    if (_selectedImage != null) {
+      imageUrl = _selectedImage!.path;
+    }
+
     final product = ProductModel(
       id: isEditing ? widget.productId : DateTime.now().millisecondsSinceEpoch.toString(),
       name: name,
@@ -353,6 +361,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       stock: stock,
       threshold: threshold,
       category: selectedCategory,
+      imageUrl: imageUrl,
     );
 
     bool success;

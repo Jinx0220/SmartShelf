@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
+
 import '../utils/colors.dart';
+import '../viewmodel/auth_viewmodel.dart';
 import 'login_screen.dart';
 import 'navigation_screen.dart';
 
@@ -22,19 +24,22 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _checkLoginStatus() async {
     await Future.delayed(const Duration(seconds: 2));
 
-    final prefs = await SharedPreferences.getInstance();
-    final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+    if (!mounted) return;
 
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => isLoggedIn
-              ? const MainNavigationScreen()
-              : const LoginScreen(),
-        ),
-      );
-    }
+    final vm = context.read<AuthViewModel>();
+
+    final loggedIn = await vm.checkLoginStatus();
+
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => loggedIn
+            ? const MainNavigationScreen()
+            : const LoginScreen(),
+      ),
+    );
   }
 
   @override

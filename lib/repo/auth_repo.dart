@@ -1,41 +1,63 @@
 import '../model/user_model.dart';
 
 abstract class AuthRepo {
-  Future<void> registerWithPhone(String phone);
+  // ==========================
+  // AUTHENTICATION
+  // ==========================
 
-  Future<bool> verifyOTP(
-      String verificationId,
-      String otp,
+  Future<bool> registerWithEmail(
+      String email,
+      String password,
       );
 
-  Future<void> saveUserData(UserModel user);
-
-  Future<bool> loginWithPhone(
-      String phone,
+  Future<bool> loginWithEmail(
+      String email,
       String password,
       );
 
   Future<void> logout();
 
+  // ==========================
+  // EMAIL VERIFICATION
+  // ==========================
+
+  Future<void> sendEmailVerification();
+
+  Future<void> reloadUser();
+
+  bool isEmailVerified();
+
+  String? getCurrentUserId();
+
+  // ==========================
+  // SESSION
+  // ==========================
+
   Future<bool> checkLoginStatus();
 
-  Future<void> sendPasswordResetOTP(String phone);
+  Future<bool> saveLoginState(bool isLoggedIn);
 
-  Future<bool> resetPassword(
-      String phone,
-      String newPassword,
-      );
+  // ==========================
+  // USER DATA
+  // ==========================
+
+  Future<void> saveUserData(UserModel user);
+
+  Future<UserModel?> getUserProfile(String uid);
 
   Future<void> updateProfile(UserModel user);
 
-  Future<UserModel> getUserProfile(String uid);
+  // ==========================
+  // PROFILE IMAGE
+  // ==========================
 
   Future<void> updateProfileImage(String imagePath);
 
-  Future<void> savePreference(
-      String key,
-      dynamic value,
-      );
+  // ==========================
+  // PREFERENCES
+  // ==========================
+
+  Future<void> savePreference(String key, dynamic value);
 
   Future<dynamic> getPreference(String key);
 }

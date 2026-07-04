@@ -44,13 +44,13 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
 
     final product = selectedProduct!;
     final saleQuantity = quantity;
-    final currentStock = product.stock ?? 0;
+    final currentStock = product.stock;
 
     if (saleQuantity > currentStock) {
       showDialog(
         context: context,
         builder: (context) => NegativeStockDialog(
-          productName: product.name ?? '',
+          productName: product.name,
           requestedQty: saleQuantity,
           currentStock: currentStock,
           onLogAnyway: () {
@@ -66,9 +66,9 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
       showDialog(
         context: context,
         builder: (context) => PriceChangeDialog(
-          productName: product.name ?? '',
-          oldPrice: (product.oldPrice ?? 0).toInt(),
-          newPrice: (product.price ?? 0).toInt(),
+          productName: product.name,
+          oldPrice: product.oldPrice!.toInt(),
+          newPrice: product.price.toInt(),
           onConfirm: () {
             Navigator.pop(context);
             _completeSale(context, product: product, quantity: saleQuantity);
@@ -95,7 +95,7 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
       id: product.id,
       name: product.name,
       price: product.price,
-      stock: (product.stock ?? 0) - quantity,
+      stock: product.stock - quantity,
       threshold: product.threshold,
       category: product.category,
       oldPrice: product.oldPrice,
@@ -106,10 +106,10 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
     final sale = SaleModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       productId: product.id ?? '',
-      productName: product.name ?? '',
+      productName: product.name ?? 'Unknown Product',
       quantity: quantity,
-      totalPrice: ((product.price ?? 0) * quantity).toInt(),
-      unitPrice: (product.price ?? 0).toInt(),
+      totalPrice: (product.price * quantity).toInt(),
+      unitPrice: product.price.toInt(),
       timestamp: DateTime.now(),
     );
     await saleVm.addSale(sale);
@@ -122,12 +122,14 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
     });
 
     // Show success
-    _showSaleSuccessDialog(
-      context,
-      productName: product.name ?? '',
-      quantity: quantity,
-      totalPrice: ((product.price ?? 0) * quantity).toInt(),
-    );
+    if (mounted) {
+      _showSaleSuccessDialog(
+        context,
+        productName: product.name,
+        quantity: quantity,
+        totalPrice: (product.price * quantity).toInt(),
+      );
+    }
   }
 
   void _showSaleSuccessDialog(
@@ -195,7 +197,7 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
     final productVm = context.watch<ProductViewModel>();
     final products = productVm.allProducts ?? [];
     final totalPrice = selectedProduct != null
-        ? ((selectedProduct!.price ?? 0) * quantity).toInt()
+        ? (selectedProduct!.price * quantity).toInt()
         : 0;
 
     return Scaffold(
@@ -273,7 +275,7 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
                     return DropdownMenuItem(
                       value: product,
                       child: Text(
-                        "${product.name} - NPR ${product.price?.toInt() ?? 0} (Stock: ${product.stock ?? 0})",
+                        "${product.name} - NPR ${product.price.toInt()} (Stock: ${product.stock})",
                         style: GoogleFonts.manrope(color: AppColor.neutral),
                       ),
                     );
@@ -421,7 +423,7 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          "Price changed from NPR ${selectedProduct!.oldPrice?.toInt() ?? 0} to NPR ${selectedProduct!.price?.toInt() ?? 0}",
+                          "Price changed from NPR ${selectedProduct!.oldPrice!.toInt()} to NPR ${selectedProduct!.price.toInt()}",
                           style: GoogleFonts.manrope(fontSize: 12, color: AppColor.warning),
                         ),
                       ),

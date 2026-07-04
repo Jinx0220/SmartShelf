@@ -18,6 +18,7 @@ class ProductListScreen extends StatefulWidget {
 class _ProductListScreenState extends State<ProductListScreen> {
   String _searchQuery = '';
   String _selectedCategory = 'All';
+  String _sortOption = 'Name';
 
   @override
   void initState() {
@@ -32,17 +33,27 @@ class _ProductListScreenState extends State<ProductListScreen> {
     final vm = context.watch<ProductViewModel>();
     final products = vm.allProducts ?? [];
 
-    // Get unique categories
-    final categories = ['All', ...products.map((p) => p.category ?? '').toSet().where((c) => c.isNotEmpty)];
+    final categories = ['All', ...products.map((p) => p.category).toSet().where((c) => c.isNotEmpty)];
 
-    // Filter products
     var filteredProducts = products;
     if (_searchQuery.isNotEmpty) {
       filteredProducts = filteredProducts.where((p) =>
-          (p.name ?? '').toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+          p.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
     }
     if (_selectedCategory != 'All') {
       filteredProducts = filteredProducts.where((p) => p.category == _selectedCategory).toList();
+    }
+
+    switch (_sortOption) {
+      case 'Name':
+        filteredProducts.sort((a, b) => a.name.compareTo(b.name));
+        break;
+      case 'Price':
+        filteredProducts.sort((a, b) => a.price.compareTo(b.price));
+        break;
+      case 'Stock':
+        filteredProducts.sort((a, b) => a.stock.compareTo(b.stock));
+        break;
     }
 
     return Scaffold(
@@ -60,6 +71,15 @@ class _ProductListScreenState extends State<ProductListScreen> {
         elevation: 0,
         centerTitle: true,
         actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.sort, color: Colors.white),
+            onSelected: (value) => setState(() => _sortOption = value),
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'Name', child: Text('Sort by Name')),
+              const PopupMenuItem(value: 'Price', child: Text('Sort by Price')),
+              const PopupMenuItem(value: 'Stock', child: Text('Sort by Stock')),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.add, color: Colors.white),
             onPressed: () => _showAddEditProductDialog(context, vm),
@@ -182,13 +202,16 @@ class _ProductListScreenState extends State<ProductListScreen> {
 
   Widget _buildProductCard(BuildContext context, ProductModel product, ProductViewModel vm) {
     final isLowStock = product.isLowStock;
+    final isDiscontinued = product.isDiscontinued;
+
+    if (isDiscontinued) return const SizedBox.shrink();
 
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => ProductDetailScreen(productId: product.id ?? ''),
+            builder: (context) => ProductDetailScreen(productId: product.id!),
           ),
         ).then((_) => vm.getAllProduct());
       },
@@ -213,7 +236,9 @@ class _ProductListScreenState extends State<ProductListScreen> {
               width: 55,
               height: 55,
               decoration: BoxDecoration(
-                color: AppColor.primary.withValues(alpha: 0.1),
+                color: isLowStock
+                    ? AppColor.error.withValues(alpha: 0.1)
+                    : AppColor.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
@@ -228,7 +253,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    product.name ?? '',
+                    product.name,
                     style: GoogleFonts.spaceGrotesk(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -237,7 +262,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Stock: ${product.stock ?? 0} | Price: ${formatCurrency((product.price ?? 0).toInt())}',
+                    'Stock: ${product.stock} | Price: ${formatCurrency(product.price.toInt())}',
                     style: GoogleFonts.manrope(
                       fontSize: 12,
                       color: AppColor.secondary,
@@ -270,10 +295,13 @@ class _ProductListScreenState extends State<ProductListScreen> {
                   _showAddEditProductDialog(context, vm, product: product);
                 } else if (value == 'delete') {
                   _showDeleteConfirmation(context, product, vm);
+                } else if (value == 'discontinue') {
+                  _showDiscontinueConfirmation(context, product, vm);
                 }
               },
               itemBuilder: (context) => [
                 const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                const PopupMenuItem(value: 'discontinue', child: Text('Discontinue')),
                 const PopupMenuItem(value: 'delete', child: Text('Delete')),
               ],
             ),
@@ -436,6 +464,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                   threshold: threshold,
                   category: selectedCategory,
                   oldPrice: product.oldPrice ?? price,
+                  isDiscontinued: product.isDiscontinued,
                 );
                 await vm.updateProduct(updatedProduct);
               } else {
@@ -447,6 +476,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                   threshold: threshold,
                   category: selectedCategory,
                   oldPrice: price,
+                  isDiscontinued: false,
                 );
                 await vm.addProduct(newProduct);
               }
@@ -494,7 +524,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              await vm.deleteproduct(product.id ?? '');
+              await vm.deleteProduct(product.id!);  // ✅ FIXED: added !
               if (mounted) Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(
@@ -503,6 +533,54 @@ class _ProductListScreenState extends State<ProductListScreen> {
             ),
             child: Text(
               'Delete',
+              style: GoogleFonts.manrope(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDiscontinueConfirmation(BuildContext context, ProductModel product, ProductViewModel vm) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Discontinue Product',
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppColor.warning,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to discontinue "${product.name}"?\n\nThis product will no longer appear in lists or predictions.',
+          style: GoogleFonts.manrope(fontSize: 14, color: AppColor.neutral),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.manrope(color: AppColor.secondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final updatedProduct = product.copyWith(isDiscontinued: true);
+              await vm.updateProduct(updatedProduct);
+              if (mounted) {
+                Navigator.pop(context);
+                Fluttertoast.showToast(msg: 'Product discontinued');
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColor.warning,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(
+              'Discontinue',
               style: GoogleFonts.manrope(color: Colors.white),
             ),
           ),

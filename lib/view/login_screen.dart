@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:smartshelf/view/navigation_screen.dart';
+
 import '../utils/colors.dart';
 import '../viewmodel/auth_viewmodel.dart';
-import 'otp_screen.dart';
 import 'register_screen.dart';
-import 'navigation_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,13 +16,14 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController phoneController = TextEditingController();
+  final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
+
   bool isPasswordVisible = false;
 
   @override
   void dispose() {
-    phoneController.dispose();
+    emailController.dispose();
     passwordController.dispose();
     super.dispose();
   }
@@ -32,116 +33,61 @@ class _LoginScreenState extends State<LoginScreen> {
     final vm = context.watch<AuthViewModel>();
 
     return Scaffold(
+      backgroundColor: AppColor.background,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         automaticallyImplyLeading: false,
       ),
-      backgroundColor: AppColor.background,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 40),
+              const SizedBox(height: 20),
+
               Center(
                 child: Text(
-                  "Welcome back",
+                  "Welcome Back",
                   style: GoogleFonts.spaceGrotesk(
-                    fontSize: 30,
+                    fontSize: 32,
                     fontWeight: FontWeight.w700,
                     color: AppColor.primary,
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+              const SizedBox(height: 8),
+              Center(
                 child: Text(
-                  "Sign in to Continue to SmartShelf",
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 20,
+                  "Sign in to continue to SmartShelf",
+                  style: GoogleFonts.manrope(
+                    fontSize: 16,
                     color: AppColor.secondary,
                   ),
-                  textAlign: TextAlign.center,
                 ),
               ),
-              const SizedBox(height: 50),
+              const SizedBox(height: 48),
+
+              // EMAIL
               Text(
-                "Phone Number",
+                "Email Address",
                 style: GoogleFonts.spaceGrotesk(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.w600,
+                  color: AppColor.neutral,
                 ),
               ),
               const SizedBox(height: 10),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        '+977',
-                        style: GoogleFonts.manrope(
-                          fontSize: 16,
-                          color: AppColor.neutral,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      width: 1,
-                      height: 30,
-                      color: Colors.grey.shade300,
-                    ),
-                    Expanded(
-                      child: TextField(
-                        controller: phoneController,
-                        keyboardType: TextInputType.phone,
-                        decoration: InputDecoration(
-                          hintText: 'Enter Your Phone Number',
-                          hintStyle: GoogleFonts.manrope(color: AppColor.secondary),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                "Password",
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 10),
+
               TextField(
-                controller: passwordController,
-                obscureText: !isPasswordVisible,
+                controller: emailController,
+                keyboardType: TextInputType.emailAddress,
+                style: GoogleFonts.manrope(fontSize: 16, color: AppColor.neutral),
                 decoration: InputDecoration(
-                  prefixIcon: Icon(Icons.lock_outline, color: Colors.grey.shade600),
-                  suffixIcon: IconButton(
-                    onPressed: () {
-                      setState(() {
-                        isPasswordVisible = !isPasswordVisible;
-                      });
-                    },
-                    icon: Icon(
-                      isPasswordVisible ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                  hintText: "Enter Your Password",
+                  hintText: "Enter your email",
                   hintStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                  prefixIcon: Icon(Icons.email_outlined, color: AppColor.secondary),
                   filled: true,
                   fillColor: Colors.grey.shade100,
                   enabledBorder: OutlineInputBorder(
@@ -155,117 +101,192 @@ class _LoginScreenState extends State<LoginScreen> {
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                 ),
               ),
+
+              const SizedBox(height: 20),
+
+              // PASSWORD
+              Text(
+                "Password",
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColor.neutral,
+                ),
+              ),
               const SizedBox(height: 10),
+
+              TextField(
+                controller: passwordController,
+                obscureText: !isPasswordVisible,
+                style: GoogleFonts.manrope(fontSize: 16, color: AppColor.neutral),
+                decoration: InputDecoration(
+                  hintText: "Enter your password",
+                  hintStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                  prefixIcon: Icon(Icons.lock_outline, color: AppColor.secondary),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      isPasswordVisible
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                      color: AppColor.secondary,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        isPasswordVisible = !isPasswordVisible;
+                      });
+                    },
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey.shade100,
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: AppColor.primary, width: 2),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              // Forgot Password
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => OTPScreen(
-                          phoneNumber: phoneController.text,
-                          fromRegister: false,
-                          isResetPassword: true,
-                        ),
-                      ),
-                    );
+                    Fluttertoast.showToast(msg: "Reset password coming soon");
                   },
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero),
                   child: Text(
                     "Forgot Password?",
                     style: GoogleFonts.manrope(
-                      color: AppColor.primary,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
+                      color: AppColor.primary,
                     ),
                   ),
                 ),
               ),
+
               const SizedBox(height: 30),
+
+              // LOGIN BUTTON
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: vm.loading
-                    ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                    ? const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColor.primary,
+                  ),
+                )
                     : ElevatedButton(
                   onPressed: () async {
-                    final phone = phoneController.text.trim();
+                    final email = emailController.text.trim();
                     final password = passwordController.text.trim();
 
-                    if (phone.isEmpty || password.isEmpty) {
-                      Fluttertoast.showToast(msg: "Please enter Phone and Password");
+                    if (email.isEmpty || password.isEmpty) {
+                      Fluttertoast.showToast(
+                        msg: "Please fill all fields",
+                      );
                       return;
                     }
 
-                    final success = await vm.loginWithPhone(phone, password);
-                    if (success && mounted) {
-                      Fluttertoast.showToast(msg: "Login Successful");
+                    final success = await vm.login(
+                      email: email,
+                      password: password,
+                    );
+
+                    if (!mounted) return;
+
+                    if (success) {
+                      final verified = await vm.isEmailVerified();
+
+                      if (!verified) {
+                        Fluttertoast.showToast(
+                          msg: "Please verify your email before logging in.",
+                        );
+
+                        await vm.logout();
+
+                        return;
+                      }
+
+                      Fluttertoast.showToast(
+                        msg: "Login Successful",
+                      );
+
+                      if (!mounted) return;
+
                       Navigator.pushReplacement(
                         context,
-                        MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
+                        MaterialPageRoute(
+                          builder: (_) => const MainNavigationScreen(),
+                        ),
                       );
-                    } else if (mounted) {
-                      Fluttertoast.showToast(msg: vm.error ?? "Login failed");
+                    } else {
+                      Fluttertoast.showToast(
+                        msg: vm.error ?? "Login Failed",
+                      );
                     }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColor.primary,
-                    foregroundColor: AppColor.background,
+                    foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(15),
                     ),
                     elevation: 3,
                   ),
                   child: Text(
                     "Log In",
                     style: GoogleFonts.spaceGrotesk(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 30),
+
+              const SizedBox(height: 24),
+
+              // REGISTER
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
                     "Don't have an account? ",
                     style: GoogleFonts.manrope(
-                      color: Colors.grey.shade800,
-                      fontSize: 17,
+                      fontSize: 15,
+                      color: AppColor.secondary,
                     ),
                   ),
                   GestureDetector(
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const RegisterScreen()),
+                        MaterialPageRoute(
+                          builder: (_) => const RegisterScreen(),
+                        ),
                       );
                     },
                     child: Text(
                       "Sign Up",
                       style: GoogleFonts.manrope(
-                        color: AppColor.primary,
-                        fontSize: 17,
+                        fontSize: 15,
                         fontWeight: FontWeight.bold,
+                        color: AppColor.primary,
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
-              if (vm.error != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    vm.error!,
-                    style: GoogleFonts.manrope(
-                      color: AppColor.error,
-                      fontSize: 14,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
+
+              const SizedBox(height: 30),
             ],
           ),
         ),

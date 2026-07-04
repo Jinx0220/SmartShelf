@@ -62,7 +62,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final saleVm = context.watch<SaleViewModel>();
 
     final product = productVm.product;
-    final sales = saleVm.productSales ?? [];
+    final sales = saleVm.sales ?? [];
 
     if (productVm.loading) {
       return Scaffold(
@@ -90,12 +90,56 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
 
     final isLowStock = product.isLowStock;
+    final isDiscontinued = product.isDiscontinued;
+
+    if (isDiscontinued) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(
+            product.name,
+            style: GoogleFonts.spaceGrotesk(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+          backgroundColor: AppColor.primary,
+          elevation: 0,
+          centerTitle: true,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.block, size: 64, color: AppColor.secondary),
+              const SizedBox(height: 16),
+              Text(
+                'Product Discontinued',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: AppColor.neutral,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'This product has been discontinued',
+                style: GoogleFonts.manrope(
+                  fontSize: 14,
+                  color: AppColor.secondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppColor.background,
       appBar: AppBar(
         title: Text(
-          product.name ?? '',
+          product.name,
           style: GoogleFonts.spaceGrotesk(
             fontSize: 20,
             fontWeight: FontWeight.w600,
@@ -162,7 +206,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    "${product.stock ?? 0} units",
+                    "${product.stock} units",
                     style: GoogleFonts.spaceGrotesk(
                       fontSize: 36,
                       fontWeight: FontWeight.bold,
@@ -175,9 +219,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _buildInfoChip("Price", formatCurrency((product.price ?? 0).toInt())),
-                      _buildInfoChip("Threshold", "${product.threshold ?? 0} units"),
-                      _buildInfoChip("Category", product.category ?? 'N/A'),
+                      _buildInfoChip("Price", formatCurrency(product.price.toInt())),
+                      _buildInfoChip("Threshold", "${product.threshold} units"),
+                      _buildInfoChip("Category", product.category),
                     ],
                   ),
                 ],
@@ -228,7 +272,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                 getTitlesWidget: (value, meta) {
                                   final spots = _getSalesSpots(sales);
                                   final index = value.toInt();
-                                  if (index >= 0 && index < spots.length) {
+                                  if (index >= 0 && index < spots.length && index < sales.length) {
                                     final date = sales[index].timestamp;
                                     return Text(
                                       "${date.day}/${date.month}",
@@ -358,11 +402,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   void _showEditDialog(BuildContext context, ProductModel product, ProductViewModel vm) {
-    final nameController = TextEditingController(text: product.name ?? '');
-    final priceController = TextEditingController(text: product.price?.toString() ?? '');
-    final stockController = TextEditingController(text: product.stock?.toString() ?? '');
-    final thresholdController = TextEditingController(text: product.threshold?.toString() ?? '');
-    String selectedCategory = product.category ?? 'Grocery';
+    final nameController = TextEditingController(text: product.name);
+    final priceController = TextEditingController(text: product.price.toString());
+    final stockController = TextEditingController(text: product.stock.toString());
+    final thresholdController = TextEditingController(text: product.threshold.toString());
+    String selectedCategory = product.category;
     final categories = ['Grocery', 'Dairy', 'Beverages', 'Snacks', 'Electronics', 'Clothing'];
 
     showDialog(
@@ -495,8 +539,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 return;
               }
 
-              final updatedProduct = ProductModel(
-                id: product.id,
+              final updatedProduct = product.copyWith(
                 name: name,
                 price: price,
                 stock: stock,
@@ -548,7 +591,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              await vm.deleteproduct(product.id ?? '');
+              await vm.deleteProduct(product.id ?? '');
               if (mounted) {
                 Navigator.pop(context);
                 Navigator.pop(context); // Go back to product list

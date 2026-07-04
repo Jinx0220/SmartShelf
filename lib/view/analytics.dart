@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,7 @@ import '../viewmodel/sale_viewmodel.dart';
 import '../viewmodel/product_viewmodel.dart';
 import '../model/sale_model.dart';
 import '../model/product_model.dart';
+import '../services/export_service.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -58,7 +60,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     }
 
     // Calculate total sales
-    final totalSales = sales        .where((s) => s.timestamp.isAfter(startDate))
+    final totalSales = sales
+        .where((s) => s.timestamp.isAfter(startDate))
         .fold(0, (sum, s) => sum + s.totalPrice);
 
     final previousTotal = sales
@@ -113,29 +116,43 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     var sortedProducts = productSalesMap.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
-    final topProducts = <TopProduct>[];
+    final topProducts = <TopProductData>[];
     for (int i = 0; i < sortedProducts.length && i < 5; i++) {
       final product = products.firstWhere(
             (p) => p.id == sortedProducts[i].key,
-        orElse: () => ProductModel(id: '', name: 'Unknown'),
+        orElse: () => ProductModel(
+          id: '',
+          name: 'Unknown',
+          price: 0,
+          stock: 0,
+          threshold: 0,
+          category: 'Unknown',
+        ),
       );
-      topProducts.add(TopProduct(
-        name: product.name ?? 'Unknown',
+      topProducts.add(TopProductData(
+        name: product.name,
         quantity: sortedProducts[i].value,
         rank: i + 1,
       ));
     }
 
     var bottomSorted = sortedProducts.toList()..sort((a, b) => a.value.compareTo(b.value));
-    final bottomProducts = <TopProduct>[];
+    final bottomProducts = <TopProductData>[];
     for (int i = 0; i < bottomSorted.length && i < 5; i++) {
       final product = products.firstWhere(
             (p) => p.id == bottomSorted[i].key,
-        orElse: () => ProductModel(id: '', name: 'Unknown'),
+        orElse: () => ProductModel(
+          id: '',
+          name: 'Unknown',
+          price: 0,
+          stock: 0,
+          threshold: 0,
+          category: 'Unknown',
+        ),
       );
       if (product.name != 'Unknown') {
-        bottomProducts.add(TopProduct(
-          name: product.name ?? 'Unknown',
+        bottomProducts.add(TopProductData(
+          name: product.name,
           quantity: bottomSorted[i].value,
           rank: i + 1,
         ));
@@ -157,6 +174,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         elevation: 0,
         centerTitle: true,
         actions: [
+          // US-58: Export Sales as CSV
+          IconButton(
+            icon: const Icon(Icons.download, color: Colors.white),
+            onPressed: () => _exportSalesAsCSV(sales),
+            tooltip: 'Export Sales as CSV',
+          ),
           Container(
             margin: const EdgeInsets.only(right: 16),
             child: DropdownButton<String>(
@@ -357,7 +380,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       topProducts.isEmpty ? 1 : topProducts.length,
                           (index) {
                         final product = topProducts.isEmpty
-                            ? TopProduct(name: 'No sales data', quantity: 0, rank: 1)
+                            ? TopProductData(name: 'No sales data', quantity: 0, rank: 1)
                             : topProducts[index];
                         return _buildProductRow(
                           rank: product.rank,
@@ -401,7 +424,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       bottomProducts.isEmpty ? 1 : bottomProducts.length,
                           (index) {
                         final product = bottomProducts.isEmpty
-                            ? TopProduct(name: 'No sales data', quantity: 0, rank: 1)
+                            ? TopProductData(name: 'No sales data', quantity: 0, rank: 1)
                             : bottomProducts[index];
                         return _buildProductRow(
                           rank: product.rank,
@@ -474,6 +497,55 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
+  // US-58: Export Sales as CSV
+  Future<void> _exportSalesAsCSV(List<SaleModel> sales) async {
+    if (sales.isEmpty) {
+      Fluttertoast.showToast(msg: 'No sales data to export');
+      return;
+    }
+
+    try {
+      List<Map<String, dynamic>> csvData = sales.map((sale) {
+        return {
+          'Date': _formatDateForExport(sale.timestamp),
+          'Time': _formatTimeForExport(sale.timestamp),
+          'Product': sale.productName,
+          'Quantity': sale.quantity,
+          'Unit Price': sale.unitPrice,
+          'Total (NPR)': sale.totalPrice,
+        };
+      }).toList();
+
+      final totalSales = sales.fold(0, (sum, s) => sum + s.totalPrice);
+      csvData.add({
+        'Date': 'TOTAL',
+        'Time': '',
+        'Product': '',
+        'Quantity': '',
+        'Unit Price': '',
+        'Total (NPR)': totalSales,
+      });
+
+      final headers = ['Date', 'Time', 'Product', 'Quantity', 'Unit Price', 'Total (NPR)'];
+
+      final csv = await ExportService().exportToCSV(csvData, headers);
+      final file = await ExportService().saveCSVToFile(csv, 'sales_export_${DateTime.now().millisecondsSinceEpoch}');
+      await ExportService().shareFile(file, 'Sales Export - SmartShelf');
+
+      Fluttertoast.showToast(msg: 'Sales exported successfully');
+    } catch (e) {
+      Fluttertoast.showToast(msg: 'Failed to export sales: $e');
+    }
+  }
+
+  String _formatDateForExport(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
+  }
+
+  String _formatTimeForExport(DateTime date) {
+    return '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
   String _getDayName(int index) {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return days[index];
@@ -505,9 +577,13 @@ class DailySales {
   DailySales(this.day, this.amount);
 }
 
-class TopProduct {
+class TopProductData {
   final String name;
   final int quantity;
   final int rank;
-  TopProduct({required this.name, required this.quantity, required this.rank});
+  TopProductData({
+    required this.name,
+    required this.quantity,
+    required this.rank,
+  });
 }

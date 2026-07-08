@@ -1,3 +1,3 @@
-String formatCurrency(int amount) {
+String formatCurrency(num amount) {
   return 'NPR $amount';
 }

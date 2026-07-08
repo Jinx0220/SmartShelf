@@ -1,3 +1,4 @@
+// auth_viewmodel.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../model/user_model.dart';
@@ -7,17 +8,25 @@ class AuthViewModel extends ChangeNotifier {
   final AuthRepo _authRepo;
 
   AuthViewModel({required AuthRepo authRepo})
-      : _authRepo = authRepo;
+      : _authRepo = authRepo {
+    // Automatically verify persistent session on application startup
+    _initializeAuth();
+  }
 
   bool _loading = false;
   String? _error;
   UserModel? _user;
   bool _loggedIn = false;
 
+  // Existing getters preserved for backward compatibility
   bool get loading => _loading;
   String? get error => _error;
   UserModel? get user => _user;
   bool get loggedIn => _loggedIn;
+
+  // New aliases to perfectly bridge with your main.dart Gatekeeper logic
+  bool get isLoading => _loading;
+  bool get isAuthenticated => _loggedIn;
 
   void _setLoading(bool value) {
     _loading = value;
@@ -38,6 +47,24 @@ class AuthViewModel extends ChangeNotifier {
   void clearError() {
     _error = null;
     notifyListeners();
+  }
+
+  // =====================================================
+  // INITIALIZATION (AUTO-LOGIN CHECK)
+  // =====================================================
+
+  Future<void> _initializeAuth() async {
+    _setLoading(true);
+    try {
+      final isLoggedIn = await _authRepo.checkLoginStatus();
+      if (isLoggedIn) {
+        await loadCurrentUser();
+      }
+    } catch (e) {
+      _setError(e.toString().replaceFirst("Exception: ", ""));
+    } finally {
+      _setLoading(false);
+    }
   }
 
   // =====================================================
@@ -63,11 +90,9 @@ class AuthViewModel extends ChangeNotifier {
       }
 
       await _authRepo.saveUserData(user);
-
       await _authRepo.sendEmailVerification();
 
       _setUser(user);
-
       return true;
     } catch (e) {
       _setError(e.toString().replaceFirst("Exception: ", ""));
@@ -79,6 +104,10 @@ class AuthViewModel extends ChangeNotifier {
 
   // =====================================================
   // LOGIN
+  // =====================================================
+
+// =====================================================
+  // LOGIN (Updated to handle verification securely)
   // =====================================================
 
   Future<bool> login({
@@ -99,17 +128,22 @@ class AuthViewModel extends ChangeNotifier {
         return false;
       }
 
+      // 1. Immediately verify email status BEFORE setting the user session active
+      final verified = await isEmailVerified();
+      if (!verified) {
+        _setError("Please verify your email before logging in.");
+        await _authRepo.logout(); // Instantly wipe the raw token at repo level
+        return false;
+      }
+
+      // 2. If verified, proceed to fetch profile data safely
       final uid = _authRepo.getCurrentUserId();
-
       if (uid != null) {
-        final profile =
-        await _authRepo.getUserProfile(uid);
-
-        _setUser(profile);
+        final profile = await _authRepo.getUserProfile(uid);
+        _setUser(profile); // Now this safely updates main.dart Gatekeeper
       }
 
       await _authRepo.saveLoginState(true);
-
       return true;
     } catch (e) {
       _setError(e.toString().replaceFirst("Exception: ", ""));
@@ -138,7 +172,6 @@ class AuthViewModel extends ChangeNotifier {
     if (user == null) return false;
 
     await user.reload();
-
     return FirebaseAuth.instance.currentUser?.emailVerified ?? false;
   }
 
@@ -151,9 +184,7 @@ class AuthViewModel extends ChangeNotifier {
 
     if (uid == null) return;
 
-    final profile =
-    await _authRepo.getUserProfile(uid);
-
+    final profile = await _authRepo.getUserProfile(uid);
     _setUser(profile);
   }
 
@@ -162,9 +193,7 @@ class AuthViewModel extends ChangeNotifier {
 
     try {
       await _authRepo.updateProfile(updatedUser);
-
       _setUser(updatedUser);
-
       return true;
     } catch (e) {
       _setError(e.toString().replaceFirst("Exception: ", ""));
@@ -187,9 +216,7 @@ class AuthViewModel extends ChangeNotifier {
 
     try {
       await _authRepo.logout();
-
       await _authRepo.saveLoginState(false);
-
       _setUser(null);
     } catch (e) {
       _setError(e.toString().replaceFirst("Exception: ", ""));

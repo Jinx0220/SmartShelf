@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Added for Clipboard functionality
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -559,9 +560,13 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
   }
 
   Future<void> _shareToWhatsApp(OrderModel order, OrderViewModel vm) async {
-    final text = await vm.exportOrderToCSV(order);
-    await Share.share(text);
-    Fluttertoast.showToast(msg: "Order list ready to share");
+    final csvData = await vm.exportOrderToCSV(order);
+    final directory = await getTemporaryDirectory();
+    final path = "${directory.path}/order_${order.id ?? 'export'}.csv";
+    final file = File(path);
+    await file.writeAsString(csvData);
+
+    await Share.shareXFiles([XFile(path)], text: "SmartShelf Suggested Order Requirements");
   }
 
   Future<void> _saveAsCSV(OrderModel order, OrderViewModel vm) async {
@@ -579,8 +584,8 @@ class _SuggestedOrderScreenState extends State<SuggestedOrderScreen> {
   }
 
   Future<void> _copyToClipboard(OrderModel order, OrderViewModel vm) async {
-    final text = await vm.exportOrderToCSV(order);
-    await Share.share(text);
-    Fluttertoast.showToast(msg: "Order list copied");
+    final csvData = await vm.exportOrderToCSV(order);
+    await Clipboard.setData(ClipboardData(text: csvData));
+    Fluttertoast.showToast(msg: "CSV structure copied directly to clipboard! 📋");
   }
 }

@@ -318,181 +318,190 @@ class _ProductListScreenState extends State<ProductListScreen> {
       }) {
     final isEditing = product != null;
     final nameController = TextEditingController(text: product?.name ?? '');
-    final priceController = TextEditingController(text: product?.price?.toString() ?? '');
-    final stockController = TextEditingController(text: product?.stock?.toString() ?? '');
-    final thresholdController = TextEditingController(text: product?.threshold?.toString() ?? '');
+    final priceController = TextEditingController(text: product?.price.toString() ?? '');
+    final stockController = TextEditingController(text: product?.stock.toString() ?? '');
+    final thresholdController = TextEditingController(text: product?.threshold.toString() ?? '');
     String selectedCategory = product?.category ?? 'Grocery';
 
     final categories = ['Grocery', 'Dairy', 'Beverages', 'Snacks', 'Electronics', 'Clothing'];
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          isEditing ? 'Edit Product' : 'Add Product',
-          style: GoogleFonts.spaceGrotesk(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: AppColor.neutral,
-          ),
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: InputDecoration(
-                    labelText: 'Product Name',
-                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      builder: (BuildContext dialogContext) => StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Text(
+                isEditing ? 'Edit Product' : 'Add Product',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppColor.neutral,
+                ),
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: nameController,
+                        decoration: InputDecoration(
+                          labelText: 'Product Name',
+                          labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: priceController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: 'Price (NPR)',
+                          labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: stockController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: 'Current Stock',
+                          labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: thresholdController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: 'Low Stock Threshold',
+                          labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: selectedCategory,
+                        decoration: InputDecoration(
+                          labelText: 'Category',
+                          labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        ),
+                        items: categories.map((category) {
+                          return DropdownMenuItem(
+                            value: category,
+                            child: Text(category, style: GoogleFonts.manrope()),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          // THIS IS THE FIX: Using setStateDialog to update the UI
+                          setStateDialog(() {
+                            selectedCategory = value!;
+                          });
+                        },
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: priceController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'Price (NPR)',
-                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.manrope(color: AppColor.secondary),
                   ),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: stockController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'Current Stock',
-                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: thresholdController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'Low Stock Threshold',
-                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: selectedCategory,
-                  decoration: InputDecoration(
-                    labelText: 'Category',
-                    labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  ),
-                  items: categories.map((category) {
-                    return DropdownMenuItem(
-                      value: category,
-                      child: Text(category, style: GoogleFonts.manrope()),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    selectedCategory = value!;
+                ElevatedButton(
+                  onPressed: () async {
+                    final name = nameController.text.trim();
+                    final price = double.tryParse(priceController.text);
+                    final stock = int.tryParse(stockController.text);
+                    final threshold = int.tryParse(thresholdController.text);
+
+                    if (name.isEmpty) {
+                      Fluttertoast.showToast(msg: 'Please enter product name');
+                      return;
+                    }
+                    if (price == null || price <= 0) {
+                      Fluttertoast.showToast(msg: 'Please enter valid price');
+                      return;
+                    }
+                    if (stock == null || stock < 0) {
+                      Fluttertoast.showToast(msg: 'Please enter valid stock');
+                      return;
+                    }
+                    if (threshold == null || threshold < 0) {
+                      Fluttertoast.showToast(msg: 'Please enter valid threshold');
+                      return;
+                    }
+
+                    if (isEditing) {
+                      final updatedProduct = ProductModel(
+                        id: product!.id,
+                        name: name,
+                        price: price,
+                        stock: stock,
+                        threshold: threshold,
+                        category: selectedCategory,
+                        oldPrice: product.oldPrice ?? price,
+                        isDiscontinued: product.isDiscontinued,
+                      );
+                      await vm.updateProduct(updatedProduct);
+                    } else {
+                      final newProduct = ProductModel(
+                        id: DateTime.now().millisecondsSinceEpoch.toString(),
+                        name: name,
+                        price: price,
+                        stock: stock,
+                        threshold: threshold,
+                        category: selectedCategory,
+                        oldPrice: price,
+                        isDiscontinued: false,
+                      );
+                      await vm.addProduct(newProduct);
+                    }
+
+                    if (dialogContext.mounted) {
+                      Navigator.pop(dialogContext);
+                    }
                   },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColor.primary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Text(
+                    isEditing ? 'Update' : 'Add',
+                    style: GoogleFonts.manrope(color: Colors.white),
+                  ),
                 ),
               ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.manrope(color: AppColor.secondary),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              final price = double.tryParse(priceController.text);
-              final stock = int.tryParse(stockController.text);
-              final threshold = int.tryParse(thresholdController.text);
-
-              if (name.isEmpty) {
-                Fluttertoast.showToast(msg: 'Please enter product name');
-                return;
-              }
-              if (price == null || price <= 0) {
-                Fluttertoast.showToast(msg: 'Please enter valid price');
-                return;
-              }
-              if (stock == null || stock < 0) {
-                Fluttertoast.showToast(msg: 'Please enter valid stock');
-                return;
-              }
-              if (threshold == null || threshold < 0) {
-                Fluttertoast.showToast(msg: 'Please enter valid threshold');
-                return;
-              }
-
-              if (isEditing) {
-                final updatedProduct = ProductModel(
-                  id: product!.id,
-                  name: name,
-                  price: price,
-                  stock: stock,
-                  threshold: threshold,
-                  category: selectedCategory,
-                  oldPrice: product.oldPrice ?? price,
-                  isDiscontinued: product.isDiscontinued,
-                );
-                await vm.updateProduct(updatedProduct);
-              } else {
-                final newProduct = ProductModel(
-                  id: DateTime.now().millisecondsSinceEpoch.toString(),
-                  name: name,
-                  price: price,
-                  stock: stock,
-                  threshold: threshold,
-                  category: selectedCategory,
-                  oldPrice: price,
-                  isDiscontinued: false,
-                );
-                await vm.addProduct(newProduct);
-              }
-
-              if (mounted) Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColor.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text(
-              isEditing ? 'Update' : 'Add',
-              style: GoogleFonts.manrope(color: Colors.white),
-            ),
-          ),
-        ],
+            );
+          }
       ),
     );
   }
@@ -525,7 +534,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
           ElevatedButton(
             onPressed: () async {
               await vm.deleteProduct(product.id!);  // ✅ FIXED: added !
-              if (mounted) Navigator.pop(context);
+              if (context.mounted) Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColor.error,
@@ -570,7 +579,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
             onPressed: () async {
               final updatedProduct = product.copyWith(isDiscontinued: true);
               await vm.updateProduct(updatedProduct);
-              if (mounted) {
+              if (context.mounted) {
                 Navigator.pop(context);
                 Fluttertoast.showToast(msg: 'Product discontinued');
               }

@@ -6,8 +6,6 @@ import '../utils/colors.dart';
 import '../viewmodel/product_viewmodel.dart';
 import '../viewmodel/sale_viewmodel.dart';
 import '../viewmodel/prediction_viewmodel.dart';
-import '../model/product_model.dart';
-import '../model/sale_model.dart';
 import '../model/prediction_model.dart';
 
 class AIPredictionsScreen extends StatefulWidget {
@@ -411,7 +409,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           "Adjust Prediction",
@@ -456,7 +454,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: Text(
               "Cancel",
               style: GoogleFonts.manrope(color: AppColor.secondary),
@@ -468,12 +466,14 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
               if (newValue < 0) newValue = 0;
 
               final success = await vm.updatePrediction(item.productId, newValue);
-              if (success && mounted) {
-                Navigator.pop(context);
-                Fluttertoast.showToast(msg: "Prediction updated to $newValue units");
-              } else if (mounted) {
-                Navigator.pop(context);
-                Fluttertoast.showToast(msg: "Failed to update prediction");
+
+              if (dialogContext.mounted) {
+                Navigator.pop(dialogContext);
+                Fluttertoast.showToast(
+                  msg: success
+                      ? "Prediction updated to $newValue units"
+                      : "Failed to update prediction",
+                );
               }
             },
             style: ElevatedButton.styleFrom(

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../utils/colors.dart';
 import '../utils/formatters.dart';
 import '../model/sale_model.dart';
+import 'package:intl/intl.dart';
 
 class SaleCard extends StatelessWidget {
   final SaleModel sale;
@@ -124,7 +125,9 @@ class SaleCard extends StatelessWidget {
     );
   }
 
+
+
   String _formatDate(DateTime date) {
-    return "${date.day}/${date.month}/${date.year} - ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}";
+    return DateFormat('dd/MM/yyyy - HH:mm').format(date);
   }
 }

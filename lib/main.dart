@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
+import 'package:smartshelf/view/MainLayoutScreen.dart';
 
 import 'services/firebase_services.dart';
 import 'utils/colors.dart';
+
+// Screens
 import 'view/splash_screen.dart';
+// TODO: Ensure these files exist in your 'view' folder
+import 'view/login_screen.dart';
 
 // Repositories
 import 'repo/auth_repo_impl.dart';
@@ -105,7 +110,21 @@ class MyApp extends StatelessWidget {
           centerTitle: true,
         ),
       ),
-      home: const SplashScreen(),
+      // The Gatekeeper: Listens to AuthViewModel to decide which screen to show
+      // Replace the home: block in your main.dart with this clean Gatekeeper pattern:
+      home: Consumer<AuthViewModel>(
+        builder: (context, auth, _) {
+          // 1. If the initialization routine is scanning SharedPreferences, keep Splash visible
+          if (auth.isLoading && !auth.isAuthenticated) {
+            return const SplashScreen();
+          }
+
+          // 2. Once scan is finished, branch strictly based on valid authentication status
+          return auth.isAuthenticated
+              ? const MainLayoutScreen()
+              : const LoginScreen();
+        },
+      ),
     );
   }
 }

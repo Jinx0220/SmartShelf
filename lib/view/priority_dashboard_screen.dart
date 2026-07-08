@@ -1,8 +1,10 @@
+// ignore_for_file: spell_check_ignore_names
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../utils/colors.dart';
+import '../utils/formatters.dart'; // Added for consistent currency formatting
 import '../viewmodel/product_viewmodel.dart';
 import '../viewmodel/sale_viewmodel.dart';
 import '../viewmodel/auth_viewmodel.dart';
@@ -56,13 +58,13 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     final todayStart = DateTime(today.year, today.month, today.day);
     final weekAgo = todayStart.subtract(const Duration(days: 7));
 
-    final todaySales = sales
+    final double todaySales = sales
         .where((s) => s.timestamp.isAfter(todayStart))
-        .fold(0, (sum, s) => sum + s.totalPrice);
+        .fold<double>(0.0, (sum, s) => sum + (s.totalPrice is int ? (s.totalPrice as int).toDouble() : s.totalPrice.toDouble()));
 
-    final weeklySales = sales
+    final double weeklySales = sales
         .where((s) => s.timestamp.isAfter(weekAgo))
-        .fold(0, (sum, s) => sum + s.totalPrice);
+        .fold<double>(0.0, (sum, s) => sum + (s.totalPrice is int ? (s.totalPrice as int).toDouble() : s.totalPrice.toDouble()));
 
     final lowStockCount = products.where((p) => p.isLowStock).length;
 
@@ -127,7 +129,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
               children: [
                 _buildGreetingHeader(greeting, user?.storeName ?? 'Everest Kirana Store'),
                 const SizedBox(height: 16),
-                _buildSalesCards(todaySales, weeklySales, lowStockCount),
+                _buildSalesCards(todaySales.toDouble(), weeklySales.toDouble(), lowStockCount.toInt()),
                 const SizedBox(height: 16),
                 if (lowStockCount > 0) _buildLowStockAlert(lowStockCount),
                 const SizedBox(height: 24),
@@ -230,133 +232,38 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     );
   }
 
-  Widget _buildSalesCards(int todaySales, int weeklySales, int lowStockCount) {
+  // FIX: Updated to accept double for sales values
+  // Ensure the signature takes double, not int
+// Ensure the signature takes double, not int
+  Widget _buildSalesCards(double todaySales, double weeklySales, int lowStockCount) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.shade100,
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "TODAY'S SALES",
-                    style: GoogleFonts.manrope(
-                      fontSize: 12,
-                      color: AppColor.secondary,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "NPR $todaySales",
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: AppColor.neutral,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          Expanded(child: _buildMetricCard("TODAY'S SALES", formatCurrency(todaySales))),
           const SizedBox(width: 12),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.shade100,
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "WEEKLY SALES",
-                    style: GoogleFonts.manrope(
-                      fontSize: 12,
-                      color: AppColor.secondary,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "NPR $weeklySales",
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppColor.neutral,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          Expanded(child: _buildMetricCard("WEEKLY SALES", formatCurrency(weeklySales))),
           const SizedBox(width: 12),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.shade100,
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "LOW STOCK",
-                    style: GoogleFonts.manrope(
-                      fontSize: 12,
-                      color: AppColor.secondary,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Text(
-                        "$lowStockCount",
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: AppColor.error,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(Icons.warning, size: 16, color: AppColor.error),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
+          Expanded(child: _buildMetricCard("LOW STOCK", "$lowStockCount")),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricCard(String title, String value) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.grey.shade100, blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: GoogleFonts.manrope(fontSize: 12, color: AppColor.secondary, letterSpacing: 0.5)),
+          const SizedBox(height: 8),
+          Text(value, style: GoogleFonts.spaceGrotesk(fontSize: 16, fontWeight: FontWeight.bold, color: AppColor.neutral)),
         ],
       ),
     );
@@ -666,29 +573,24 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
                 final productVm = context.read<ProductViewModel>();
                 final products = productVm.allProducts ?? [];
                 final index = products.indexWhere((p) => p.id == product.productId);
+
                 if (index != -1) {
-                  final updated = products[index].copyWith(
+                  await productVm.updateProduct(products[index].copyWith(
                     stock: products[index].stock + orderQty,
-                  );
-                  await productVm.updateProduct(updated);
+                  ));
                 }
-                if (mounted) {
-                  Navigator.pop(context);
-                  Fluttertoast.showToast(msg: "Ordered $orderQty x ${product.name}");
-                  await productVm.getAllProduct();
-                }
+
+                // THIS IS THE FIX
+                if (!mounted) return;
+
+                Navigator.pop(context);
+                Fluttertoast.showToast(msg: "Ordered $orderQty x ${product.name}");
+                await productVm.getAllProduct();
               } else {
                 Fluttertoast.showToast(msg: "Please enter valid quantity");
               }
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColor.success,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text(
-              "Confirm Order",
-              style: GoogleFonts.manrope(color: Colors.white),
-            ),
+            child: const Text("Confirm Order"),
           ),
         ],
       ),

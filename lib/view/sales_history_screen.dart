@@ -1,7 +1,10 @@
+import 'dart:io'; // Added for file interactions
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:path_provider/path_provider.dart'; // Added for path generation
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart'; // Added for system document sharing
 import '../utils/colors.dart';
 import '../utils/formatters.dart';
 import '../viewmodel/sale_viewmodel.dart';
@@ -29,6 +32,37 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     return "${date.day}/${date.month}/${date.year} - ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}";
   }
 
+  Future<void> _exportSalesHistoryToCSV(List<SaleModel> salesList) async {
+    if (salesList.isEmpty) {
+      Fluttertoast.showToast(msg: "No sales records available to export!");
+      return;
+    }
+
+    StringBuffer csvBuilder = StringBuffer();
+    csvBuilder.writeln("Sale ID,Product Name,Quantity,Unit Price,Total Price,Timestamp");
+
+    for (var sale in salesList) {
+      csvBuilder.writeln(
+          "${sale.id},${sale.productName},${sale.quantity},${sale.unitPrice},${sale.totalPrice},${sale.timestamp.toIso8601String()}"
+      );
+    }
+
+    try {
+      final directory = await getTemporaryDirectory();
+      final path = "${directory.path}/sales_history_${DateTime.now().millisecondsSinceEpoch}.csv";
+      final file = File(path);
+
+      await file.writeAsString(csvBuilder.toString());
+
+      await Share.shareXFiles(
+        [XFile(path)],
+        text: "SmartShelf Business Analytics - Complete Sales History Export",
+      );
+    } catch (e) {
+      Fluttertoast.showToast(msg: "Export failed: ${e.toString()}");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<SaleViewModel>();
@@ -49,6 +83,11 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
         elevation: 0,
         centerTitle: true,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.file_download, color: Colors.white),
+            tooltip: "Export Sales to CSV",
+            onPressed: () => _exportSalesHistoryToCSV(sales),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: () => vm.getAllSales(),

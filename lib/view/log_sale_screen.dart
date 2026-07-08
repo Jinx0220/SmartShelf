@@ -114,6 +114,9 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
     );
     await saleVm.addSale(sale);
 
+    // CRITICAL FIX: Must check mounted before calling setState after an await
+    if (!mounted) return;
+
     // Reset form
     setState(() {
       selectedProduct = null;
@@ -122,14 +125,12 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
     });
 
     // Show success
-    if (mounted) {
-      _showSaleSuccessDialog(
-        context,
-        productName: product.name,
-        quantity: quantity,
-        totalPrice: (product.price * quantity).toInt(),
-      );
-    }
+    _showSaleSuccessDialog(
+      context,
+      productName: product.name ?? 'Product',
+      quantity: quantity,
+      totalPrice: (product.price * quantity).toInt(),
+    );
   }
 
   void _showSaleSuccessDialog(

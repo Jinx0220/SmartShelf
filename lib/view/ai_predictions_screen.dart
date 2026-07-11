@@ -16,6 +16,8 @@ class AIPredictionsScreen extends StatefulWidget {
 }
 
 class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
+  bool _isPerformingInitialLoad = false;
+
   @override
   void initState() {
     super.initState();
@@ -25,35 +27,54 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
   }
 
   Future<void> _loadData() async {
-    final productVm = context.read<ProductViewModel>();
-    final saleVm = context.read<SaleViewModel>();
-    final predictionVm = context.read<PredictionViewModel>();
+    if (!mounted) return;
 
-    await productVm.getAllProduct();
-    await saleVm.getAllSales();
+    setState(() {
+      _isPerformingInitialLoad = true;
+    });
 
-    final products = productVm.allProducts ?? [];
-    final sales = saleVm.sales ?? [];
+    try {
+      final productVm = context.read<ProductViewModel>();
+      final saleVm = context.read<SaleViewModel>();
+      final predictionVm = context.read<PredictionViewModel>();
 
-    if (products.isNotEmpty) {
-      await predictionVm.generatePredictions(products, sales, 0);
+      // Load underlying infrastructure collections silently
+      await productVm.getAllProduct();
+      await saleVm.getAllSales();
+
+      final products = productVm.allProducts ?? [];
+      final sales = saleVm.sales ?? [];
+
+      if (products.isNotEmpty) {
+        await predictionVm.generatePredictions(products, sales, 0);
+      } else {
+        await predictionVm.getAllPredictions();
+      }
+    } catch (e) {
+      debugPrint("Error loading predictions data: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPerformingInitialLoad = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Select precisely what needs to be watched to prevent excessive layout invalidation
     final predictionVm = context.watch<PredictionViewModel>();
-    final productVm = context.watch<ProductViewModel>();
-    final saleVm = context.watch<SaleViewModel>();
-
-    final isLoading = predictionVm.loading || productVm.loading || saleVm.loading;
     final predictions = predictionVm.predictions ?? [];
+
+    // Base layout state evaluation on the orchestration layer instead of raw components
+    final isPageBusy = _isPerformingInitialLoad || predictionVm.loading;
 
     return Scaffold(
       backgroundColor: AppColor.background,
       appBar: AppBar(
         title: Text(
-          "AI Predictions",
+          "Smart Stock Estimates",
           style: GoogleFonts.spaceGrotesk(
             fontSize: 20,
             fontWeight: FontWeight.w600,
@@ -70,32 +91,39 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
           ),
         ],
       ),
-      body: isLoading
+      body: isPageBusy
           ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
           : predictions.isEmpty
           ? Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.auto_graph, size: 64, color: AppColor.secondary),
-            const SizedBox(height: 16),
-            Text(
-              "No Predictions Yet",
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: AppColor.neutral,
-              ),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.auto_graph, size: 64, color: AppColor.secondary),
+                const SizedBox(height: 16),
+                Text(
+                  "No Estimates Prepared Yet",
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColor.neutral,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Add items and record customer sales to calculate recommendations.",
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.manrope(
+                    fontSize: 14,
+                    color: AppColor.secondary,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              "Add products and log sales to generate predictions",
-              style: GoogleFonts.manrope(
-                fontSize: 14,
-                color: AppColor.secondary,
-              ),
-            ),
-          ],
+          ),
         ),
       )
           : Column(
@@ -105,13 +133,15 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
             color: Colors.grey.shade50,
             child: Row(
               children: [
-                Icon(Icons.auto_graph, size: 18, color: AppColor.primary),
+                const Icon(Icons.auto_graph, size: 18, color: AppColor.primary),
                 const SizedBox(width: 8),
-                Text(
-                  "Based on your last 4 weeks of sales",
-                  style: GoogleFonts.manrope(
-                    fontSize: 13,
-                    color: AppColor.secondary,
+                Expanded(
+                  child: Text(
+                    "Calculated using your last 4 weeks of sales history",
+                    style: GoogleFonts.manrope(
+                      fontSize: 13,
+                      color: AppColor.secondary,
+                    ),
                   ),
                 ),
               ],
@@ -120,6 +150,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
           Expanded(
             child: RefreshIndicator(
               onRefresh: _loadData,
+              color: AppColor.primary,
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: predictions.length,
@@ -167,6 +198,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
                   ),
                 ),
               ),
+              const SizedBox(width: 8),
               _buildConfidenceBadge(item.confidenceLevel),
             ],
           ),
@@ -175,11 +207,13 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
             children: [
               Icon(Icons.inventory_2_outlined, size: 16, color: AppColor.secondary),
               const SizedBox(width: 6),
-              Text(
-                "Predicted: ${item.predictedQuantity} units",
-                style: GoogleFonts.manrope(
-                  fontSize: 13,
-                  color: AppColor.secondary,
+              Expanded(
+                child: Text(
+                  "Estimated customer demand: ${item.predictedQuantity} units",
+                  style: GoogleFonts.manrope(
+                    fontSize: 13,
+                    color: AppColor.secondary,
+                  ),
                 ),
               ),
             ],
@@ -200,7 +234,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "AI Prediction:",
+                  "Suggested Stock:",
                   style: GoogleFonts.manrope(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -226,7 +260,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
                           color: AppColor.primary.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Icon(Icons.edit, size: 16, color: AppColor.primary),
+                        child: const Icon(Icons.edit, size: 16, color: AppColor.primary),
                       ),
                     ),
                   ],
@@ -238,9 +272,9 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
           if (item.confidenceLevel != "Insufficient")
             TextButton.icon(
               onPressed: () => _showWhyDialog(item),
-              icon: Icon(Icons.help_outline, size: 16, color: AppColor.tertiary),
+              icon: const Icon(Icons.help_outline, size: 16, color: AppColor.tertiary),
               label: Text(
-                "Why this prediction?",
+                "Why this suggestion?",
                 style: GoogleFonts.manrope(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
@@ -256,11 +290,13 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
                 children: [
                   Icon(Icons.info_outline, size: 14, color: AppColor.secondary),
                   const SizedBox(width: 6),
-                  Text(
-                    "Not enough sales history (need 7+ days)",
-                    style: GoogleFonts.manrope(
-                      fontSize: 11,
-                      color: AppColor.secondary,
+                  Expanded(
+                    child: Text(
+                      "Needs at least 7 days of recorded shop history",
+                      style: GoogleFonts.manrope(
+                        fontSize: 11,
+                        color: AppColor.secondary,
+                      ),
                     ),
                   ),
                 ],
@@ -278,19 +314,19 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
     switch (confidence) {
       case "High":
         color = AppColor.success;
-        text = "High Confidence";
+        text = "Highly Reliable";
         break;
       case "Medium":
         color = AppColor.tertiary;
-        text = "Medium Confidence";
+        text = "Fairly Reliable";
         break;
       case "Low":
         color = AppColor.warning;
-        text = "Low Confidence";
+        text = "Rough Estimate";
         break;
       default:
         color = AppColor.secondary;
-        text = "Insufficient Data";
+        text = "Collecting Data";
     }
 
     return Container(
@@ -313,14 +349,19 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
 
   void _showWhyDialog(PredictionModel item) {
     final explanation = item.explanationData;
-    final weeklyAverages = explanation['weeklyAverages'] as Map<int, double>?;
+
+    // Explicit runtime validation mapping safely handle dynamic types from firestore map entries
+    Map<String, dynamic> rawAverages = {};
+    if (explanation['weeklyAverages'] != null) {
+      rawAverages = Map<String, dynamic>.from(explanation['weeklyAverages']);
+    }
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          "Why ${item.predictedQuantity} units?",
+          "Stock Calculation Breakdown",
           style: GoogleFonts.spaceGrotesk(
             color: AppColor.primary,
             fontWeight: FontWeight.w600,
@@ -332,24 +373,29 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Based on last 4 weeks of sales data",
+              "Average item quantities sold over past weeks:",
               style: GoogleFonts.manrope(fontSize: 13, color: AppColor.secondary),
             ),
             const SizedBox(height: 16),
-            if (weeklyAverages != null)
-              ...weeklyAverages.entries.map((entry) {
+            if (rawAverages.isNotEmpty)
+              ...rawAverages.entries.map((entry) {
                 final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                final int? dayIdx = int.tryParse(entry.key.toString());
+                final double salesAvg = double.tryParse(entry.value.toString()) ?? 0.0;
+
+                if (dayIdx == null || dayIdx < 1 || dayIdx > 7) return const SizedBox.shrink();
+
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        days[entry.key - 1],
+                        days[dayIdx - 1],
                         style: GoogleFonts.manrope(fontSize: 13),
                       ),
                       Text(
-                        "${entry.value.toStringAsFixed(1)} units avg",
+                        "${salesAvg.toStringAsFixed(1)} units sold avg",
                         style: GoogleFonts.manrope(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
@@ -360,9 +406,9 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
                   ),
                 );
               }).toList(),
-            if (!explanation.containsKey('weeklyAverages'))
+            if (rawAverages.isEmpty)
               Text(
-                explanation['message'] ?? 'No data available',
+                explanation['message'] ?? 'No records found',
                 style: GoogleFonts.manrope(fontSize: 13, color: AppColor.secondary),
               ),
             const SizedBox(height: 16),
@@ -374,14 +420,16 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.calculate, size: 18, color: AppColor.primary),
+                  const Icon(Icons.analytics_outlined, size: 18, color: AppColor.primary),
                   const SizedBox(width: 8),
-                  Text(
-                    "Method: ${explanation['method'] ?? 'Moving Average'}",
-                    style: GoogleFonts.manrope(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: AppColor.neutral,
+                  Expanded(
+                    child: Text(
+                      "Pattern Model: Weekly Sales Trends",
+                      style: GoogleFonts.manrope(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppColor.neutral,
+                      ),
                     ),
                   ),
                 ],
@@ -403,7 +451,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
   }
 
   void _showAdjustDialog(PredictionModel item, PredictionViewModel vm) {
-    TextEditingController controller = TextEditingController(
+    final TextEditingController controller = TextEditingController(
       text: item.predictedQuantity.toString(),
     );
 
@@ -412,7 +460,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          "Adjust Prediction",
+          "Adjust Expected Demand",
           style: GoogleFonts.spaceGrotesk(
             color: AppColor.neutral,
             fontWeight: FontWeight.w600,
@@ -424,7 +472,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Change prediction for ${item.productName}",
+              "Manually change suggested amount for ${item.productName}",
               style: GoogleFonts.manrope(fontSize: 14, color: AppColor.secondary),
             ),
             const SizedBox(height: 20),
@@ -433,7 +481,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
               keyboardType: TextInputType.number,
               style: GoogleFonts.manrope(fontSize: 16),
               decoration: InputDecoration(
-                labelText: "New prediction (units)",
+                labelText: "New stocking target (units)",
                 labelStyle: GoogleFonts.manrope(color: AppColor.secondary),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -471,8 +519,8 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
                 Navigator.pop(dialogContext);
                 Fluttertoast.showToast(
                   msg: success
-                      ? "Prediction updated to $newValue units"
-                      : "Failed to update prediction",
+                      ? "Target updated to $newValue units"
+                      : "Failed to update estimate value",
                 );
               }
             },
@@ -481,7 +529,7 @@ class _AIPredictionsScreenState extends State<AIPredictionsScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             child: Text(
-              "Save",
+              "Save Target",
               style: GoogleFonts.manrope(color: Colors.white),
             ),
           ),

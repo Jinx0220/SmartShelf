@@ -1,3 +1,4 @@
+// File: lib/view/register_screen.dart
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -16,7 +17,7 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  final _formKey = GlobalKey<FormState>(); // Added for robust validation
+  final _formKey = GlobalKey<FormState>();
 
   final fullNameController = TextEditingController();
   final emailController = TextEditingController();
@@ -28,19 +29,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool hidePassword = true;
   bool hideConfirmPassword = true;
 
-  @override
-  void dispose() {
-    fullNameController.dispose();
-    emailController.dispose();
-    storeNameController.dispose();
-    storeAddressController.dispose();
-    passwordController.dispose();
-    confirmPasswordController.dispose();
-    super.dispose();
-  }
-
   Future<void> _handleRegister() async {
-    // 1. Trigger form validation
     if (!_formKey.currentState!.validate()) return;
 
     final vm = context.read<AuthViewModel>();
@@ -52,7 +41,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       storeAddress: storeAddressController.text.trim(),
     );
 
-    // 2. Process Registration
     final success = await vm.register(
       user: user,
       password: passwordController.text,
@@ -60,11 +48,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (!mounted) return;
 
-    // 3. Handle Result
     if (success) {
-      Fluttertoast.showToast(msg: "Account created successfully.");
+      // 1. Show success message first
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Account created successfully!"),
+          backgroundColor: Colors.green,
+        ),
+      );
 
-      // Navigate to Email Verification
+      // 2. WAIT for the user to see it
+      await Future.delayed(const Duration(seconds: 1));
+
+      if (!mounted) return;
+
+      // 3. Navigate
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -74,10 +72,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
       );
     } else {
-      Fluttertoast.showToast(
-        msg: vm.error ?? "Registration failed",
-        backgroundColor: AppColor.error,
-        textColor: Colors.white,
+      // Show the actual error from the Repo
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(vm.error ?? "Registration failed"),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -101,12 +101,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Form(
-            key: _formKey, // Wrap in Form for validation
+            key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 20),
-
                 Center(
                   child: Text(
                     "Create Account",
@@ -259,7 +258,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                     ),
                     GestureDetector(
-                      onTap: () => Navigator.pop(context), // Safely drops back to Login
+                      onTap: () => Navigator.pop(context),
                       child: Text(
                         "Sign In",
                         style: GoogleFonts.manrope(

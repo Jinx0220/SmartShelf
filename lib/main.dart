@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
+import 'package:smartshelf/repo/product_repo.dart';
 import 'package:smartshelf/view/MainLayoutScreen.dart';
+import 'package:smartshelf/viewmodel/theme_viewmodel.dart';
 
 import 'services/firebase_services.dart';
 import 'utils/colors.dart';
 
 // Screens
 import 'view/splash_screen.dart';
-// TODO: Ensure these files exist in your 'view' folder
 import 'view/login_screen.dart';
 
 // Repositories
@@ -32,13 +33,8 @@ import 'viewmodel/analytics_viewmodel.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  print("STEP 1");
   await FirebaseServices().initialize();
-
-  print("STEP 2");
   await SharedPreferences.getInstance();
-
-  print("STEP 3");
 
   runApp(
     MultiProvider(
@@ -49,6 +45,9 @@ void main() async {
           ),
         ),
         ChangeNotifierProvider(
+          create: (_) => ThemeViewModel(),
+        ),
+        ChangeNotifierProvider(
           create: (_) => ProductViewModel(
             productRepo: ProductRepoImpl(),
           ),
@@ -56,6 +55,7 @@ void main() async {
         ChangeNotifierProvider(
           create: (_) => SaleViewModel(
             saleRepo: SaleRepoImpl(),
+            productRepo: ProductRepoImpl(),
           ),
         ),
         ChangeNotifierProvider(
@@ -97,34 +97,52 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'SmartShelf',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        fontFamily: 'Manrope',
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: AppColor.background,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: AppColor.primary,
-          elevation: 0,
-          centerTitle: true,
-        ),
-      ),
-      // The Gatekeeper: Listens to AuthViewModel to decide which screen to show
-      // Replace the home: block in your main.dart with this clean Gatekeeper pattern:
-      home: Consumer<AuthViewModel>(
-        builder: (context, auth, _) {
-          // 1. If the initialization routine is scanning SharedPreferences, keep Splash visible
-          if (auth.isLoading && !auth.isAuthenticated) {
-            return const SplashScreen();
-          }
+    return Consumer<ThemeViewModel>(
+      builder: (context, themeVm, child) {
+        return MaterialApp(
+          title: 'SmartShelf',
+          debugShowCheckedModeBanner: false,
+          themeMode: themeVm.isDarkMode ? ThemeMode.dark : ThemeMode.light,
 
-          // 2. Once scan is finished, branch strictly based on valid authentication status
-          return auth.isAuthenticated
-              ? const MainLayoutScreen()
-              : const LoginScreen();
-        },
-      ),
+          // Light Theme configurations
+          theme: ThemeData(
+            brightness: Brightness.light,
+            fontFamily: 'Manrope',
+            primaryColor: AppColor.primary,
+            scaffoldBackgroundColor: AppColor.background,
+            appBarTheme: const AppBarTheme(
+              backgroundColor: AppColor.primary,
+              elevation: 0,
+              centerTitle: true,
+            ),
+          ),
+
+          // FIXED: Adding explicit matching Dark Theme properties enforces seamless system-wide color distribution
+          darkTheme: ThemeData(
+            brightness: Brightness.dark,
+            fontFamily: 'Manrope',
+            primaryColor: AppColor.primary,
+            scaffoldBackgroundColor: const Color(0xFF121212),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: AppColor.primary,
+              elevation: 0,
+              centerTitle: true,
+            ),
+          ),
+
+          home: Consumer<AuthViewModel>(
+            builder: (context, auth, _) {
+              if (auth.isLoading && !auth.isAuthenticated) {
+                return const SplashScreen();
+              }
+
+              return auth.isAuthenticated
+                  ? const MainLayoutScreen()
+                  : const LoginScreen();
+            },
+          ),
+        );
+      },
     );
   }
 }

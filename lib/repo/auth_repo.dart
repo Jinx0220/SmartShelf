@@ -22,6 +22,10 @@ abstract class AuthRepo {
   // ==========================
 
   Future<void> sendEmailVerification();
+  Future<void> deleteAccount();
+
+  // Place this inside your abstract class AuthRepo { ... }
+  Future<void> sendPasswordResetEmail(String email);
 
   Future<void> reloadUser();
 

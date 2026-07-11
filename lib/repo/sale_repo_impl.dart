@@ -50,6 +50,29 @@ class SaleRepoImpl implements SaleRepo {
   }
 
   @override
+  Future<void> batchInsertSales(List<SaleModel> sales) async {
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+
+      for (var sale in sales) {
+        final docRef = sale.id.isNotEmpty
+            ? _collection.doc(sale.id)
+            : _collection.doc();
+
+        final initializedSale = sale.id.isNotEmpty
+            ? sale
+            : sale.copyWith(id: docRef.id);
+
+        batch.set(docRef, initializedSale.toMap());
+      }
+
+      await batch.commit();
+    } catch (e) {
+      throw Exception('Failed to execute batch restore operation for sales: $e');
+    }
+  }
+
+  @override
   Future<List<SaleModel>> getSalesForProduct(String productId) async {
     try {
       final snapshot = await _collection
@@ -80,7 +103,8 @@ class SaleRepoImpl implements SaleRepo {
       int total = 0;
       for (var doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        total += data['totalPrice'] as int? ?? 0;
+        // FIXED: Safe conversion from num to int prevents silent casting crashes
+        total += (data['totalPrice'] as num?)?.toInt() ?? 0;
       }
       return total;
     } catch (e) {
@@ -102,7 +126,8 @@ class SaleRepoImpl implements SaleRepo {
       int total = 0;
       for (var doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        total += data['totalPrice'] as int? ?? 0;
+        // FIXED: Safe conversion from num to int prevents silent casting crashes
+        total += (data['totalPrice'] as num?)?.toInt() ?? 0;
       }
       return total;
     } catch (e) {
@@ -123,7 +148,8 @@ class SaleRepoImpl implements SaleRepo {
       int total = 0;
       for (var doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        total += data['totalPrice'] as int? ?? 0;
+        // FIXED: Safe conversion from num to int prevents silent casting crashes
+        total += (data['totalPrice'] as num?)?.toInt() ?? 0;
       }
       return total;
     } catch (e) {

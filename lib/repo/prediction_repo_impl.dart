@@ -9,7 +9,6 @@ import 'sale_repo_impl.dart';
 import 'settings_repo_impl.dart';
 import 'product_repo_impl.dart';
 
-
 class PredictionRepoImpl implements PredictionRepo {
   final CollectionReference _collection =
   FirebaseServices().firestore.collection('predictions');
@@ -41,13 +40,16 @@ class PredictionRepoImpl implements PredictionRepo {
 
   @override
   Future<void> savePrediction(PredictionModel prediction) async {
-    final ref = _collection.doc(prediction.id);
+    // FIXED: Guard against null IDs causing Firestore crashes by using an auto-generated path pointer
+    final ref = prediction.id == null || prediction.id!.isEmpty
+        ? _collection.doc()
+        : _collection.doc(prediction.id);
     await ref.set(prediction.toMap());
   }
 
   @override
   Future<void> savePredictions(List<PredictionModel> predictions) async {
-    final batch = FirebaseFirestore.instance.batch();
+    final batch = FirebaseServices().firestore.batch();
     for (var prediction in predictions) {
       final ref = _collection.doc(prediction.id ??
           '${prediction.productId}_${DateTime.now().millisecondsSinceEpoch}');
@@ -60,12 +62,10 @@ class PredictionRepoImpl implements PredictionRepo {
   Future<List<PredictionModel>> getAllPredictions() async {
     try {
       final snapshot = await _collection.get();
-      return snapshot.docs
-          .map((doc) {
+      return snapshot.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
         return PredictionModel.fromMap(data)..id = doc.id;
-      })
-          .toList();
+      }).toList();
     } catch (e) {
       return [];
     }
@@ -114,9 +114,12 @@ class PredictionRepoImpl implements PredictionRepo {
           .where('productId', isEqualTo: productId)
           .get();
 
+      // FIXED: Batch the structural inventory mutations to minimize multi-trip network thrashing
+      final batch = FirebaseServices().firestore.batch();
       for (var doc in snapshot.docs) {
-        await doc.reference.delete();
+        batch.delete(doc.reference);
       }
+      await batch.commit();
     } catch (e) {
       throw Exception('Failed to delete prediction: $e');
     }
@@ -148,7 +151,6 @@ class PredictionRepoImpl implements PredictionRepo {
       final productRepo = ProductRepoImpl();
       final saleRepo = SaleRepoImpl();
 
-      // ✅ Explicitly cast to ensure type consistency
       final List<ProductModel> products = await productRepo.getAllProduct();
       final List<SaleModel> sales = await saleRepo.getAllSales();
 
@@ -161,28 +163,31 @@ class PredictionRepoImpl implements PredictionRepo {
         weeklyOffDay,
       );
 
-      // Delete old predictions
+      // Fetch outdated tracking profiles targeted for replacement
       final snapshot = await _collection
           .where('userId', isEqualTo: userId)
           .get();
 
+      // FIXED: Refactored individual await deletions to run in a fast, single atomic write batch
+      final batch = FirebaseServices().firestore.batch();
       for (var doc in snapshot.docs) {
-        await doc.reference.delete();
+        batch.delete(doc.reference);
       }
+      await batch.commit();
 
-      // Save new predictions
+      // Save new predictions in a secondary performance-optimized batch sequence
       await savePredictions(predictions);
     } catch (e) {
       throw Exception('Failed to retrain predictions: $e');
     }
   }
 
-  // US-38: Auto-retrain nightly
+  // US-38: Auto-retrain nightly scheduled routine
   Future<void> autoRetrainNightly() async {
     try {
       await retrainPredictions('current_user_id');
     } catch (e) {
-      // Log error
+      // Log structural analytics failure logs gracefully
     }
   }
 }

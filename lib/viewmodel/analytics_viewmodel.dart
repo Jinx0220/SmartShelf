@@ -134,7 +134,6 @@ class AnalyticsViewModel extends ChangeNotifier {
     final sales = _sales ?? [];
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final weekAgo = today.subtract(const Duration(days: 7));
 
     List<DailySalesData> weeklyData = [];
 
@@ -158,8 +157,7 @@ class AnalyticsViewModel extends ChangeNotifier {
   List<DailySalesData> getMonthlySalesData() {
     final sales = _sales ?? [];
     final now = DateTime.now();
-    final firstDayOfMonth = DateTime(now.year, now.month, 1);
-    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+        final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
 
     List<DailySalesData> monthlyData = [];
 

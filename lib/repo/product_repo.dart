@@ -11,4 +11,6 @@ abstract class ProductRepo {
   Future<List<ProductModel>> searchProduct(String name);
   Future<List<ProductModel>> getLowStockProducts();
   Future<List<ProductModel>> getCriticalStockProducts();
+  Future<void> deleteAllProducts();
+  Future<void> batchInsertProducts(List<ProductModel> products);
 }

@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class PredictionModel {
   String? id;
   String productId;
@@ -39,7 +41,6 @@ class PredictionModel {
     }
   }
 
-  // US-41: Calculate accuracy - FIXED: returns double
   double get accuracy {
     if (actualQuantity == null || actualQuantity == 0) return 0.0;
     if (predictedQuantity == 0) return 0.0;
@@ -71,17 +72,26 @@ class PredictionModel {
     };
   }
 
-  factory PredictionModel.fromMap(Map<String, dynamic> map) {
+  factory PredictionModel.fromMap(Map<String, dynamic> map, {String? documentId}) {
+    // Fixed conversion vulnerability using cross-compatible dynamic checking
+    DateTime parseDate(dynamic val) {
+      if (val is Timestamp) return val.toDate();
+      if (val is String) return DateTime.tryParse(val) ?? DateTime.now();
+      return DateTime.now();
+    }
+
     return PredictionModel(
-      id: map['id'] as String?,
-      productId: map['productId'] as String,
-      productName: map['productName'] as String,
-      predictedQuantity: map['predictedQuantity'] as int,
+      id: documentId ?? map['id'] as String?,
+      productId: map['productId'] as String? ?? '',
+      productName: map['productName'] as String? ?? 'Unknown Product',
+      predictedQuantity: map['predictedQuantity'] as int? ?? 0,
       actualQuantity: map['actualQuantity'] as int?,
-      confidenceLevel: map['confidenceLevel'] as String,
-      generatedDate: DateTime.parse(map['generatedDate'] as String),
-      forWeekStarting: DateTime.parse(map['forWeekStarting'] as String),
-      explanationData: map['explanationData'] as Map<String, dynamic>? ?? {},
+      confidenceLevel: map['confidenceLevel'] as String? ?? 'Low',
+      generatedDate: parseDate(map['generatedDate']),
+      forWeekStarting: parseDate(map['forWeekStarting']),
+      explanationData: map['explanationData'] != null
+          ? Map<String, dynamic>.from(map['explanationData'] as Map)
+          : {},
     );
   }
 

@@ -15,6 +15,7 @@ abstract class OrderRepo {
   Future<void> saveOrder(OrderModel order);
   Future<void> markOrderPlaced(String id);
   Future<void> deleteOrder(String id);
+  Future<void> completeAndRestockOrder(OrderModel order);
 
   // Export
   Future<String> exportOrderToCSV(OrderModel order);

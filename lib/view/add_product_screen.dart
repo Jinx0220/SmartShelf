@@ -34,6 +34,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ProductViewModel>().getAllProduct();
+    });
     if (widget.productId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadProduct();
@@ -375,6 +378,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
     if (success && mounted) {
       Fluttertoast.showToast(msg: isEditing ? 'Product updated' : 'Product added');
+      if (!context.mounted) return;
       Navigator.pop(context);
     } else if (mounted) {
       Fluttertoast.showToast(msg: vm.error ?? 'Failed to save product');

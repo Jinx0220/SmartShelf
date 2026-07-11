@@ -11,4 +11,5 @@ abstract class SaleRepo {
   Future<int> getMonthlySales();
   Future<Map<String, int>> getTopProducts({int limit = 5});
   Future<Map<String, int>> getBottomProducts({int limit = 5});
+  Future<void> batchInsertSales(List<SaleModel> sales);
 }

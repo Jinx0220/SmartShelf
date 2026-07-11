@@ -1,7 +1,7 @@
 // view/MainLayoutScreen.dart
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:smartshelf/view/AIpredictions_screen.dart';
+import 'package:smartshelf/view/ai_predictions_screen.dart';
 
 import '../utils/colors.dart';
 import 'analytics.dart';

@@ -548,6 +548,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 oldPrice: product.oldPrice ?? price,
               );
               await vm.updateProduct(updatedProduct);
+              if (!context.mounted) return;
               if (mounted) Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(
@@ -593,7 +594,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             onPressed: () async {
               await vm.deleteProduct(product.id ?? '');
               if (mounted) {
-                Navigator.pop(context);
+                if (!context.mounted) return;
                 Navigator.pop(context); // Go back to product list
               }
             },

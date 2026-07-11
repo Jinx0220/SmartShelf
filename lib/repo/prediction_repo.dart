@@ -3,7 +3,7 @@ import '../model/product_model.dart';
 import '../model/sale_model.dart';
 
 abstract class PredictionRepo {
-  // Generate predictions
+  // Generate Core Batch / Singular Machine Learning Projections
   Future<List<PredictionModel>> generatePredictions(
       List<ProductModel> products,
       List<SaleModel> sales,
@@ -16,19 +16,19 @@ abstract class PredictionRepo {
       int weeklyOffDay,
       );
 
-  // Save predictions
+  // Persistence Operations
   Future<void> savePrediction(PredictionModel prediction);
   Future<void> savePredictions(List<PredictionModel> predictions);
 
-  // Get predictions
+  // Read Retrieval Queries
   Future<List<PredictionModel>> getAllPredictions();
   Future<PredictionModel?> getPredictionForProduct(String productId);
 
-  // Update/Delete
+  // Mutation Contracts
   Future<void> updatePrediction(String productId, int newQuantity);
   Future<void> deletePrediction(String productId);
 
-  // Analytics
+  // Algorithmic Backtesting & Training Pipeline Contracts
   Future<Map<String, double>> getPredictionAccuracy();
   Future<void> retrainPredictions(String userId);
 }

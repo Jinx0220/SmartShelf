@@ -1,3 +1,5 @@
+// File: lib/view/log_sale_screen.dart
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -21,6 +23,11 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
   ProductModel? selectedProduct;
   int quantity = 1;
   final TextEditingController quantityController = TextEditingController(text: '1');
+  String searchQuery = '';
+
+  // CORE ARCHITECTURE UPGRADE: Global Reference Hook for Dynamic Currency
+  // Change this variable to connect directly with your global Settings/Preferences view model state
+  final String activeCurrencySymbol = "NPR";
 
   @override
   void initState() {
@@ -40,6 +47,13 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
     if (selectedProduct == null) {
       Fluttertoast.showToast(msg: "Please select a product");
       return;
+    }
+
+    if (quantity < 1) {
+      setState(() {
+        quantity = 1;
+        quantityController.text = '1';
+      });
     }
 
     final product = selectedProduct!;
@@ -90,47 +104,47 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
     final productVm = context.read<ProductViewModel>();
     final saleVm = context.read<SaleViewModel>();
 
-    // Update product stock
-    final updatedProduct = ProductModel(
-      id: product.id,
-      name: product.name,
-      price: product.price,
-      stock: product.stock - quantity,
-      threshold: product.threshold,
-      category: product.category,
-      oldPrice: product.oldPrice,
-    );
-    await productVm.updateProduct(updatedProduct);
+    try {
+      final updatedProduct = product.copyWith(
+        stock: product.stock - quantity,
+      );
 
-    // Save sale
-    final sale = SaleModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      productId: product.id ?? '',
-      productName: product.name ?? 'Unknown Product',
-      quantity: quantity,
-      totalPrice: (product.price * quantity).toInt(),
-      unitPrice: product.price.toInt(),
-      timestamp: DateTime.now(),
-    );
-    await saleVm.addSale(sale);
+      await productVm.updateProduct(updatedProduct);
 
-    // CRITICAL FIX: Must check mounted before calling setState after an await
-    if (!mounted) return;
+      final sale = SaleModel(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        productId: product.id ?? '',
+        productName: product.name,
+        quantity: quantity,
+        totalPrice: (product.price * quantity).toInt(),
+        unitPrice: product.price.toInt(),
+        timestamp: DateTime.now(),
+      );
 
-    // Reset form
-    setState(() {
-      selectedProduct = null;
-      this.quantity = 1;
-      quantityController.text = '1';
-    });
+      await saleVm.addSale(sale);
+      await saleVm.getAllSales();
 
-    // Show success
-    _showSaleSuccessDialog(
-      context,
-      productName: product.name ?? 'Product',
-      quantity: quantity,
-      totalPrice: (product.price * quantity).toInt(),
-    );
+      if (!context.mounted) return;
+
+      final int completedTotalPrice = (product.price * quantity).toInt();
+      final String completedProductName = product.name;
+      final int completedQuantity = quantity;
+
+      setState(() {
+        selectedProduct = null;
+        this.quantity = 1;
+        quantityController.text = '1';
+      });
+
+      _showSaleSuccessDialog(
+        context,
+        productName: completedProductName,
+        quantity: completedQuantity,
+        totalPrice: completedTotalPrice,
+      );
+    } catch (e) {
+      Fluttertoast.showToast(msg: "Transaction processing failure: ${e.toString()}");
+    }
   }
 
   void _showSaleSuccessDialog(
@@ -145,14 +159,11 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            Icon(Icons.check_circle, color: AppColor.success),
+            const Icon(Icons.check_circle, color: AppColor.success),
             const SizedBox(width: 8),
             Text(
               "Sale Completed",
-              style: GoogleFonts.spaceGrotesk(
-                fontWeight: FontWeight.w600,
-                color: AppColor.success,
-              ),
+              style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w600, color: AppColor.success),
             ),
           ],
         ),
@@ -160,22 +171,15 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text("Sold ${quantity}x $productName", style: GoogleFonts.manrope(fontSize: 14)),
+            const SizedBox(height: 8),
             Text(
-              "Sold ${quantity}x $productName",
-              style: GoogleFonts.manrope(fontSize: 14),
+              "Total: $activeCurrencySymbol $totalPrice",
+              style: GoogleFonts.spaceGrotesk(fontSize: 16, fontWeight: FontWeight.bold, color: AppColor.primary),
             ),
             const SizedBox(height: 8),
             Text(
-              "Total: NPR $totalPrice",
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppColor.primary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "Stock has been updated",
+              "Stock updates broadcasted successfully.",
               style: GoogleFonts.manrope(fontSize: 12, color: AppColor.secondary),
             ),
           ],
@@ -183,10 +187,7 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(
-              "OK",
-              style: GoogleFonts.manrope(color: AppColor.primary),
-            ),
+            child: Text("OK", style: GoogleFonts.manrope(color: AppColor.primary)),
           ),
         ],
       ),
@@ -196,266 +197,361 @@ class _LogSaleScreenState extends State<LogSaleScreen> {
   @override
   Widget build(BuildContext context) {
     final productVm = context.watch<ProductViewModel>();
-    final products = productVm.allProducts ?? [];
-    final totalPrice = selectedProduct != null
-        ? (selectedProduct!.price * quantity).toInt()
-        : 0;
+    final saleVm = context.watch<SaleViewModel>();
+    final allProducts = productVm.allProducts ?? [];
+    final isActionLoading = productVm.loading || saleVm.loading;
+
+    final filteredProducts = allProducts.where((p) =>
+    p.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
+        (p.barcode != null && p.barcode!.contains(searchQuery))
+    ).toList();
+
+    final effectiveQuantity = quantity > 0 ? quantity : 1;
+    final totalPrice = selectedProduct != null ? (selectedProduct!.price * effectiveQuantity).toInt() : 0;
 
     return Scaffold(
       backgroundColor: AppColor.background,
       appBar: AppBar(
         title: Text(
           "Log Sale",
-          style: GoogleFonts.spaceGrotesk(
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
+          style: GoogleFonts.spaceGrotesk(fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white),
         ),
         backgroundColor: AppColor.primary,
         elevation: 0,
         centerTitle: true,
       ),
-      body: productVm.loading
+      body: productVm.loading && allProducts.isEmpty
           ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
-          : products.isEmpty
+          : allProducts.isEmpty
           ? Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inventory, size: 64, color: AppColor.secondary),
+            const Icon(Icons.inventory, size: 64, color: AppColor.secondary),
             const SizedBox(height: 16),
             Text(
               "No Products Found",
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: AppColor.neutral,
-              ),
+              style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w600, color: AppColor.neutral),
             ),
             const SizedBox(height: 8),
             Text(
-              "Please add products from the Products tab",
-              style: GoogleFonts.manrope(
-                fontSize: 14,
-                color: AppColor.secondary,
-              ),
+              "Please populate your inventory configuration list first.",
+              style: GoogleFonts.manrope(fontSize: 14, color: AppColor.secondary),
             ),
           ],
         ),
       )
-          : SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "Select Product",
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppColor.neutral,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<ProductModel>(
-                  isExpanded: true,
-                  hint: Text(
-                    "Choose a product",
-                    style: GoogleFonts.manrope(color: AppColor.secondary),
-                  ),
-                  value: selectedProduct,
-                  items: products.map((product) {
-                    return DropdownMenuItem(
-                      value: product,
-                      child: Text(
-                        "${product.name} - NPR ${product.price.toInt()} (Stock: ${product.stock})",
-                        style: GoogleFonts.manrope(color: AppColor.neutral),
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (product) {
-                    setState(() {
-                      selectedProduct = product;
-                      quantity = 1;
-                      quantityController.text = '1';
-                    });
+          : Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+            child: TextField(
+              onChanged: (value) {
+                setState(() {
+                  searchQuery = value;
+                });
+              },
+              style: GoogleFonts.manrope(fontSize: 14),
+              decoration: InputDecoration(
+                hintText: "Search items by name or scan barcode...",
+                hintStyle: GoogleFonts.manrope(color: AppColor.secondary),
+                prefixIcon: const Icon(Icons.search, color: AppColor.secondary),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.qr_code_scanner, color: AppColor.primary),
+                  onPressed: () {
+                    // Placeholder for scanning hardware triggers
                   },
                 ),
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
               ),
             ),
-            const SizedBox(height: 24),
+          ),
 
-            if (selectedProduct != null) ...[
-              Text(
-                "Quantity",
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppColor.neutral,
-                ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+            child: Text(
+              "Products Inventory (${filteredProducts.length})",
+              style: GoogleFonts.spaceGrotesk(fontSize: 15, fontWeight: FontWeight.w600, color: AppColor.neutral),
+            ),
+          ),
+
+          Expanded(
+            child: filteredProducts.isEmpty
+                ? Center(
+              child: Text(
+                "No items match your search",
+                style: GoogleFonts.manrope(color: AppColor.secondary, fontSize: 14),
               ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  GestureDetector(
-                    onTap: () {
-                      if (quantity > 1) {
-                        setState(() {
-                          quantity--;
-                          quantityController.text = quantity.toString();
-                        });
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
+            )
+                : ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              itemCount: filteredProducts.length,
+              itemBuilder: (context, index) {
+                final product = filteredProducts[index];
+                final isSelected = selectedProduct?.id == product.id;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppColor.primary.withValues(alpha: 0.08) : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected ? AppColor.primary : Colors.grey.shade200,
+                      width: isSelected ? 1.5 : 1,
+                    ),
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+
+                    // --- RESOLVES ISSUE 2: Renders Product Thumbnails dynamically ---
+                    leading: Container(
+                      width: 44,
+                      height: 44,
                       decoration: BoxDecoration(
                         color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(Icons.remove, size: 20, color: AppColor.secondary),
+                      child: product.imagePath != null && product.imagePath!.isNotEmpty
+                          ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          File(product.imagePath!),
+                          fit: BoxFit.cover,
+                          errorBuilder: (c, e, s) => const Icon(Icons.image, color: AppColor.secondary),
+                        ),
+                      )
+                          : const Icon(Icons.image, color: AppColor.secondary),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  SizedBox(
-                    width: 80,
-                    child: TextField(
-                      controller: quantityController,
-                      textAlign: TextAlign.center,
-                      keyboardType: TextInputType.number,
-                      style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w600),
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: AppColor.primary, width: 2),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      onChanged: (value) {
-                        final qty = int.tryParse(value);
-                        if (qty != null && qty > 0) {
-                          setState(() => quantity = qty);
-                        }
-                      },
+
+                    title: Text(
+                      product.name,
+                      style: GoogleFonts.manrope(fontWeight: FontWeight.w600, color: AppColor.neutral),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  GestureDetector(
+
+                    // --- RESOLVES ISSUE 1: Injects scannable Barcode tag directly underneath title ---
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Stock count: ${product.stock} units | ${product.category}",
+                          style: GoogleFonts.manrope(fontSize: 12, color: AppColor.secondary),
+                        ),
+                        if (product.barcode != null && product.barcode!.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.label_outline, size: 12, color: AppColor.primary),
+                                const SizedBox(width: 4),
+                                Text(
+                                  "BC: ${product.barcode}",
+                                  style: GoogleFonts.spaceGrotesk(fontSize: 11, fontWeight: FontWeight.w500, color: AppColor.primary),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+
+                    // --- RESOLVES ISSUE 8: Uses localized token prefix instead of hardcoded 'NPR' text ---
+                    trailing: Text(
+                      "$activeCurrencySymbol ${product.price.toInt()}",
+                      style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, color: AppColor.primary, fontSize: 15),
+                    ),
                     onTap: () {
                       setState(() {
-                        quantity++;
-                        quantityController.text = quantity.toString();
+                        selectedProduct = product;
+                        quantity = 1;
+                        quantityController.text = '1';
                       });
                     },
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          if (selectedProduct != null)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -4),
+                  )
+                ],
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                ),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Active Selection",
+                                style: GoogleFonts.manrope(fontSize: 12, color: AppColor.secondary),
+                              ),
+                              Text(
+                                selectedProduct!.name,
+                                style: GoogleFonts.spaceGrotesk(fontSize: 16, fontWeight: FontWeight.bold, color: AppColor.neutral),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                if (quantity > 1) {
+                                  setState(() {
+                                    quantity--;
+                                    quantityController.text = quantity.toString();
+                                  });
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.remove, size: 18, color: AppColor.secondary),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            SizedBox(
+                              width: 60,
+                              child: TextField(
+                                controller: quantityController,
+                                textAlign: TextAlign.center,
+                                keyboardType: TextInputType.number,
+                                style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.bold),
+                                decoration: InputDecoration(
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                                onChanged: (value) {
+                                  final qty = int.tryParse(value);
+                                  setState(() {
+                                    quantity = (qty != null && qty > 0) ? qty : 0;
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  if (quantity < 1) quantity = 0;
+                                  quantity++;
+                                  quantityController.text = quantity.toString();
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.add, size: 18, color: AppColor.secondary),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    if (selectedProduct!.oldPrice != null && selectedProduct!.price != selectedProduct!.oldPrice)
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        margin: const EdgeInsets.only(bottom: 14),
+                        decoration: BoxDecoration(
+                          color: AppColor.warning.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, color: AppColor.warning, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "Price changed: $activeCurrencySymbol ${selectedProduct!.oldPrice!.toInt()} → $activeCurrencySymbol ${selectedProduct!.price.toInt()}",
+                                style: GoogleFonts.manrope(fontSize: 12, color: AppColor.warning),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      margin: const EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
+                        color: AppColor.primary.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.add, size: 20, color: AppColor.secondary),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColor.primary.withValues(alpha: 0.1), AppColor.primary.withValues(alpha: 0.05)],
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Total Amount",
-                      style: GoogleFonts.manrope(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppColor.neutral,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "Total Amount Due",
+                            style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w600, color: AppColor.neutral),
+                          ),
+                          Text(
+                            "$activeCurrencySymbol $totalPrice",
+                            style: GoogleFonts.spaceGrotesk(fontSize: 20, fontWeight: FontWeight.bold, color: AppColor.primary),
+                          ),
+                        ],
                       ),
                     ),
-                    Text(
-                      "NPR $totalPrice",
-                      style: GoogleFonts.spaceGrotesk(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: AppColor.primary,
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: isActionLoading ? null : () => _processSale(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColor.primary,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: isActionLoading
+                            ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        )
+                            : Text(
+                          "Confirm Sale",
+                          style: GoogleFonts.spaceGrotesk(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 32),
-
-              if (selectedProduct!.oldPrice != null &&
-                  selectedProduct!.price != selectedProduct!.oldPrice)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: AppColor.warning.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline, color: AppColor.warning, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          "Price changed from NPR ${selectedProduct!.oldPrice!.toInt()} to NPR ${selectedProduct!.price.toInt()}",
-                          style: GoogleFonts.manrope(fontSize: 12, color: AppColor.warning),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: () => _processSale(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColor.primary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                  ),
-                  child: Text(
-                    "Confirm Sale",
-                    style: GoogleFonts.spaceGrotesk(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

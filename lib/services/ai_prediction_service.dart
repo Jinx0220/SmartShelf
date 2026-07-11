@@ -4,7 +4,8 @@ import '../model/sale_model.dart';
 import '../model/product_model.dart';
 
 class AIPredictionService {
-  // Calculate moving average of last N weeks
+
+  // Calculate moving average of last N weeks safely
   double calculateMovingAverage(List<int> data, {int period = 4}) {
     if (data.isEmpty) return 0;
     final takeCount = min(period, data.length);
@@ -12,7 +13,7 @@ class AIPredictionService {
     return recentData.reduce((a, b) => a + b) / recentData.length;
   }
 
-  // Group sales by weekday and calculate averages
+  // Group sales by weekday and calculate averages cleanly
   Map<int, double> calculateWeekdayAverages(List<SaleModel> sales) {
     Map<int, List<int>> salesByWeekday = {};
 
@@ -35,7 +36,7 @@ class AIPredictionService {
     return avgByWeekday;
   }
 
-  // Calculate confidence level based on data availability
+  // Calculate confidence level based on historical tracking depth
   String calculateConfidence(List<SaleModel> sales, {int weeklyOffDay = 0}) {
     if (sales.length < 7) return 'Insufficient';
     if (sales.length >= 28) return 'High';
@@ -43,7 +44,7 @@ class AIPredictionService {
     return 'Low';
   }
 
-  // Generate explanation for prediction
+  // Generate breakdown explanations for the frontend dashboard panels
   Map<String, dynamic> generateExplanation(
       PredictionModel prediction,
       List<SaleModel> sales,
@@ -68,7 +69,7 @@ class AIPredictionService {
     };
   }
 
-  // Generate prediction for a single product
+  // Generate prediction metrics for a single explicit product entry
   PredictionModel generateProductPrediction(
       String productId,
       String productName,
@@ -116,7 +117,7 @@ class AIPredictionService {
     );
   }
 
-  // Generate predictions for all products
+  // Generate full batch catalog predictions systematically
   List<PredictionModel> generateAllPredictions(
       List<ProductModel> products,
       List<SaleModel> sales,
@@ -125,13 +126,17 @@ class AIPredictionService {
     List<PredictionModel> predictions = [];
 
     for (var product in products) {
+      // Safe fallback extraction to guard against missing identity keys
+      final targetId = product.id ?? '';
+      if (targetId.isEmpty) continue;
+
       final productSales = sales
-          .where((s) => s.productId == product.id)
+          .where((s) => s.productId == targetId)
           .toList();
 
       final prediction = generateProductPrediction(
-        product.id!,
-        product.name!,
+        targetId,
+        product.name, // Removed the redundant syntax bang operator (!)
         productSales,
         weeklyOffDay,
       );
@@ -141,14 +146,14 @@ class AIPredictionService {
     return predictions;
   }
 
-  // Calculate prediction accuracy
+  // Calculate algorithmic error margins against target historical bounds
   double calculateAccuracy(PredictionModel prediction, int actualSales) {
     if (prediction.predictedQuantity == 0) return 0;
     final diff = (prediction.predictedQuantity - actualSales).abs();
     return max(0, 100 - (diff / prediction.predictedQuantity * 100));
   }
 
-  // Get confidence badge text
+  // Map structural localized badges
   String getConfidenceText(String confidence) {
     switch (confidence) {
       case 'High': return 'High Confidence';

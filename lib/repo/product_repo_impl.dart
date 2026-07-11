@@ -9,11 +9,20 @@ class ProductRepoImpl implements ProductRepo {
   @override
   Future<void> addProduct(ProductModel model) async {
     try {
+      // --- ADD THIS CHECK ---
+      // Query to check if any product with this name exists (case-sensitive)
+      final existing = await _collection.where('name', isEqualTo: model.name).get();
+      if (existing.docs.isNotEmpty) {
+        throw Exception('A product with the name "${model.name}" already exists.');
+      }
+      // ----------------------
+
       final ref = _collection.doc();
       final newModel = model.copyWith(id: ref.id);
       await ref.set(newModel.toMap());
     } catch (e) {
-      throw Exception('Failed to add product: $e');
+      // Re-throw the exception so the ViewModel catches it and shows the toast/snack
+      throw Exception(e.toString().replaceAll("Exception: ", ""));
     }
   }
 
@@ -60,6 +69,46 @@ class ProductRepoImpl implements ProductRepo {
       }).toList();
     } catch (e) {
       return [];
+    }
+  }
+
+  @override
+  Future<void> deleteAllProducts() async {
+    try {
+      final snapshot = await _collection.get();
+      final batch = FirebaseFirestore.instance.batch();
+
+      for (var doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+
+      await batch.commit();
+    } catch (e) {
+      throw Exception('Failed to clear database: $e');
+    }
+  }
+
+  @override
+  Future<void> batchInsertProducts(List<ProductModel> products) async {
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+
+      for (var product in products) {
+        // Fallback to auto-generated document ID if model lacks an initialization ID
+        final docRef = product.id != null && product.id!.isNotEmpty
+            ? _collection.doc(product.id)
+            : _collection.doc();
+
+        final initializedProduct = product.id != null && product.id!.isNotEmpty
+            ? product
+            : product.copyWith(id: docRef.id);
+
+        batch.set(docRef, initializedProduct.toMap());
+      }
+
+      await batch.commit();
+    } catch (e) {
+      throw Exception('Failed to execute batch restore operation: $e');
     }
   }
 

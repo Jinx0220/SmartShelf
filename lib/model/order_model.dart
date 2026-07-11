@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class OrderModel {
   String? id;
   List<OrderItemModel> items;
@@ -29,17 +31,28 @@ class OrderModel {
     };
   }
 
-  factory OrderModel.fromMap(Map<String, dynamic> map) {
+  factory OrderModel.fromMap(Map<String, dynamic> map, {String? documentId}) {
+    DateTime parseDate(dynamic val) {
+      if (val is Timestamp) return val.toDate();
+      if (val is String) return DateTime.tryParse(val) ?? DateTime.now();
+      return DateTime.now();
+    }
+
+    DateTime? parseNullableDate(dynamic val) {
+      if (val == null) return null;
+      if (val is Timestamp) return val.toDate();
+      if (val is String) return DateTime.tryParse(val);
+      return null;
+    }
+
     return OrderModel(
-      id: map['id'] as String?,
-      items: (map['items'] as List)
-          .map((e) => OrderItemModel.fromMap(e as Map<String, dynamic>))
-          .toList(),
-      generatedDate: DateTime.parse(map['generatedDate'] as String),
+      id: documentId ?? map['id'] as String?,
+      items: map['items'] != null
+          ? (map['items'] as List).map((e) => OrderItemModel.fromMap(Map<String, dynamic>.from(e as Map))).toList()
+          : [],
+      generatedDate: parseDate(map['generatedDate']),
       isPlaced: map['isPlaced'] as bool? ?? false,
-      placedDate: map['placedDate'] != null
-          ? DateTime.parse(map['placedDate'] as String)
-          : null,
+      placedDate: parseNullableDate(map['placedDate']),
       supplierNotes: map['supplierNotes'] as String?,
     );
   }
@@ -75,12 +88,12 @@ class OrderItemModel {
 
   factory OrderItemModel.fromMap(Map<String, dynamic> map) {
     return OrderItemModel(
-      productId: map['productId'] as String,
-      productName: map['productName'] as String,
-      suggestedQuantity: map['suggestedQuantity'] as int,
-      finalQuantity: map['finalQuantity'] as int,
-      currentStock: map['currentStock'] as int,
-      threshold: map['threshold'] as int,
+      productId: map['productId'] as String? ?? '',
+      productName: map['productName'] as String? ?? 'Unknown Item',
+      suggestedQuantity: map['suggestedQuantity'] as int? ?? 0,
+      finalQuantity: map['finalQuantity'] as int? ?? 0,
+      currentStock: map['currentStock'] as int? ?? 0,
+      threshold: map['threshold'] as int? ?? 0,
     );
   }
 

@@ -1,33 +1,44 @@
 import 'dart:io';
 import 'dart:convert';
-import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:csv/csv.dart';
 
 class ExportService {
-  // Export to CSV
+
+  // Export to CSV using the modern csv 8.0.0+ global encoder
   Future<String> exportToCSV(List<Map<String, dynamic>> data, List<String> headers) async {
     try {
-      StringBuffer csvBuffer = StringBuffer();
-      csvBuffer.writeln(headers.join(','));
+      List<List<dynamic>> csvData = [];
 
+      // Add the header row
+      csvData.add(headers);
+
+      // Add the data rows
       for (var row in data) {
-        List<String> rowValues = [];
+        List<dynamic> rowValues = [];
         for (var header in headers) {
-          var value = row[header];
-          String stringValue = value?.toString() ?? '';
-          if (stringValue.contains(',') || stringValue.contains('"')) {
-            stringValue = '"${stringValue.replaceAll('"', '""')}"';
-          }
-          rowValues.add(stringValue);
+          rowValues.add(row[header] ?? '');
         }
-        csvBuffer.writeln(rowValues.join(','));
+        csvData.add(rowValues);
       }
 
-      return csvBuffer.toString();
+      // Utilizing top-level codec serialization engine
+      return csv.encode(csvData);
     } catch (e) {
       throw Exception('Failed to generate CSV: $e');
+    }
+  }
+
+  // Parse raw CSV text into a matrix grid using the modern csv 8.0.0+ global decoder
+  Future<List<List<dynamic>>> parseCSV(String csvContent) async {
+    try {
+      if (csvContent.isEmpty) return [];
+      // Utilizing top-level codec deserialization engine
+      return csv.decode(csvContent);
+    } catch (e) {
+      throw Exception('Failed to parse imported CSV data: $e');
     }
   }
 
@@ -44,22 +55,27 @@ class ExportService {
     }
   }
 
-  // Share file
+  // Share file using unified ShareParams payload configuration
   Future<void> shareFile(File file, String message) async {
     try {
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        text: message,
+      await SharePlus.instance.share(
+        ShareParams(
+          text: message,
+          subject: 'SmartShelf Share',
+          files: [XFile(file.path)],
+        ),
       );
     } catch (e) {
       throw Exception('Failed to share file: $e');
     }
   }
 
-  // Share text
+  // Share text using unified ShareParams payload configuration
   Future<void> shareText(String text) async {
     try {
-      await Share.share(text);
+      await SharePlus.instance.share(
+        ShareParams(text: text),
+      );
     } catch (e) {
       throw Exception('Failed to share text: $e');
     }
@@ -94,9 +110,11 @@ class ExportService {
       final file = File(path);
       await file.writeAsString(jsonString);
 
-      await Share.shareXFiles(
-        [XFile(path)],
-        text: 'SmartShelf Backup Data',
+      await SharePlus.instance.share(
+        ShareParams(
+          text: 'SmartShelf Backup Data',
+          files: [XFile(path)],
+        ),
       );
     } catch (e) {
       throw Exception('Failed to backup data: $e');

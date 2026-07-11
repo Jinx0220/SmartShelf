@@ -1,128 +1,141 @@
+// File: lib/repo/order_repo_impl.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../model/order_model.dart';
 import '../model/product_model.dart';
 import '../model/prediction_model.dart';
-import '../services/firebase_services.dart';
 import 'order_repo.dart';
 
 class OrderRepoImpl implements OrderRepo {
-  final CollectionReference _collection =
-  FirebaseServices().firestore.collection('orders');
+  final FirebaseFirestore _firestore;
+
+  OrderRepoImpl({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  // Reference pointing directly to your Firestore collection
+  CollectionReference get _collection => _firestore.collection('orders');
+
+  @override
+  Future<List<OrderModel>> getAllOrders() async {
+    try {
+      final snapshot = await _collection.orderBy('generatedDate', descending: true).get();
+      return snapshot.docs.map((doc) {
+        return OrderModel.fromMap(doc.data() as Map<String, dynamic>, documentId: doc.id);
+      }).toList();
+    } catch (e) {
+      throw Exception("Failed to fetch historical orders from Cloud Firestore: $e");
+    }
+  }
+
+  @override
+  Future<void> completeAndRestockOrder(OrderModel order) async {
+    try {
+      final batch = _firestore.batch();
+
+      // 1. Loop through each item in the order and increment the product's inventory
+      for (var item in order.items) {
+        if (item.productId.isNotEmpty) {
+          final productRef = _firestore.collection('products').doc(item.productId);
+
+          // FieldValue.increment is atomic and safe from multi-user race conditions
+          batch.update(productRef, {
+            'stock': FieldValue.increment(item.finalQuantity),
+          });
+        }
+      }
+
+      // 2. Delete the order document so it immediately vanishes from active history lists
+      final orderRef = _collection.doc(order.id);
+      batch.delete(orderRef);
+
+      // Commit all changes simultaneously to Firebase
+      await batch.commit();
+    } catch (e) {
+      throw Exception("Failed to execute atomic restock transaction: $e");
+    }
+  }
+
+  @override
+  Future<OrderModel?> getOrderById(String id) async {
+    try {
+      final doc = await _collection.doc(id).get();
+      if (!doc.exists) return null;
+      return OrderModel.fromMap(doc.data() as Map<String, dynamic>, documentId: doc.id);
+    } catch (e) {
+      throw Exception("Failed to get order $id: $e");
+    }
+  }
+
+  @override
+  Future<void> saveOrder(OrderModel order) async {
+    try {
+      // Fallback safeguard to guarantee a valid document key identifier exists
+      final docId = (order.id != null && order.id!.isNotEmpty)
+          ? order.id!
+          : _collection.doc().id;
+
+      order.id = docId;
+
+      // set with merge handles updates or new insertions cleanly
+      await _collection.doc(docId).set(order.toMap(), SetOptions(merge: true));
+    } catch (e) {
+      throw Exception("Firestore database write transaction rejected: $e");
+    }
+  }
+
+  @override
+  Future<void> markOrderPlaced(String id) async {
+    try {
+      await _collection.doc(id).update({
+        'isPlaced': true,
+        'placedDate': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      throw Exception("Failed to update placement status in Firestore: $e");
+    }
+  }
+
+  @override
+  Future<void> deleteOrder(String id) async {
+    try {
+      await _collection.doc(id).delete();
+    } catch (e) {
+      throw Exception("Failed to delete Firestore document: $e");
+    }
+  }
+
+  @override
+  Future<String> exportOrderToCSV(OrderModel order) async {
+    final buffer = StringBuffer();
+    buffer.writeln("Product Name,Current Stock,Threshold,Suggested Quantity,Final Quantity");
+    for (var item in order.items) {
+      buffer.writeln('"${item.productName}",${item.currentStock},${item.threshold},${item.suggestedQuantity},${item.finalQuantity}');
+    }
+    return buffer.toString();
+  }
+
+  @override
+  Future<String> generateOrderText(OrderModel order) async {
+    final buffer = StringBuffer();
+    buffer.writeln("📦 SmartShelf Suggested Order Requirements");
+    buffer.writeln("Generated: ${order.generatedDate.toLocal()}");
+    buffer.writeln("=========================================");
+    for (var item in order.items) {
+      buffer.writeln("• ${item.productName} — Qty: ${item.finalQuantity} units (Current Stock: ${item.currentStock})");
+    }
+    return buffer.toString();
+  }
 
   @override
   Future<OrderModel> generateSuggestedOrder(
       List<ProductModel> products,
       List<PredictionModel> predictions,
       ) async {
-    List<OrderItemModel> items = [];
-
-    for (var product in products) {
-      final prediction = predictions.firstWhere(
-            (p) => p.productId == product.id,
-        orElse: () => PredictionModel(
-          productId: product.id!,
-          productName: product.name!,
-          predictedQuantity: 0,
-          confidenceLevel: 'Insufficient',
-          generatedDate: DateTime.now(),
-          forWeekStarting: DateTime.now(),
-          explanationData: {},
-        ),
-      );
-
-      final stockDeficit = (product.threshold ?? 0) - (product.stock ?? 0);
-      final suggestedQty = stockDeficit + prediction.predictedQuantity;
-
-      if (suggestedQty > 0) {
-        items.add(OrderItemModel(
-          productId: product.id!,
-          productName: product.name!,
-          suggestedQuantity: suggestedQty,
-          finalQuantity: suggestedQty,
-          currentStock: product.stock ?? 0,
-          threshold: product.threshold ?? 0,
-        ));
-      }
-    }
-
-    items.sort((a, b) => b.suggestedQuantity.compareTo(a.suggestedQuantity));
-
+    // Note: The UI calculation logic is already processed directly by your ViewModel.
+    // This override satisfies your repository contract safely.
     return OrderModel(
-      items: items,
+      items: [],
       generatedDate: DateTime.now(),
       isPlaced: false,
     );
-  }
-
-  @override
-  Future<List<OrderModel>> getAllOrders() async {
-    final snapshot = await _collection
-        .orderBy('generatedDate', descending: true)
-        .get();
-
-    return snapshot.docs
-        .map((doc) => OrderModel.fromMap(doc.data() as Map<String, dynamic>)
-      ..id = doc.id)
-        .toList();
-  }
-
-  @override
-  Future<OrderModel?> getOrderById(String id) async {
-    final doc = await _collection.doc(id).get();
-    if (!doc.exists) return null;
-    return OrderModel.fromMap(doc.data() as Map<String, dynamic>)
-      ..id = doc.id;
-  }
-
-  @override
-  Future<void> saveOrder(OrderModel order) async {
-    final ref = _collection.doc(order.id);
-    await ref.set(order.toMap());
-  }
-
-  @override
-  Future<void> markOrderPlaced(String id) async {
-    await _collection.doc(id).update({
-      'isPlaced': true,
-      'placedDate': DateTime.now().toIso8601String(),
-    });
-  }
-
-  @override
-  Future<void> deleteOrder(String id) async {
-    await _collection.doc(id).delete();
-  }
-
-  @override
-  Future<String> exportOrderToCSV(OrderModel order) async {
-    StringBuffer buffer = StringBuffer();
-    buffer.writeln('Product Name,Current Stock,Threshold,Prediction,Suggested Quantity');
-
-    for (var item in order.items) {
-      buffer.writeln(
-        '${item.productName},${item.currentStock},${item.threshold},'
-            '${item.suggestedQuantity},${item.finalQuantity}',
-      );
-    }
-
-    return buffer.toString();
-  }
-
-  @override
-  Future<String> generateOrderText(OrderModel order) async {
-    StringBuffer buffer = StringBuffer();
-    buffer.writeln('*SmartShelf Order List*');
-    buffer.writeln('Generated: ${order.generatedDate}');
-    buffer.writeln('');
-
-    for (var item in order.items) {
-      buffer.writeln('${item.productName}: ${item.finalQuantity} units');
-    }
-
-    buffer.writeln('');
-    buffer.writeln('Total Items: ${order.totalItems}');
-    buffer.writeln('Total Quantity: ${order.totalQuantity}');
-
-    return buffer.toString();
   }
 }

@@ -120,6 +120,12 @@ class AuthRepoImpl implements AuthRepo {
     return _auth.currentUser?.uid;
   }
 
+  @override
+  Future<void> sendPasswordResetEmail(String email) async {
+    // If your variable name is different, change '_firebaseAuth' to match your instance name
+    await _auth.sendPasswordResetEmail(email: email);
+  }
+
   // =====================================================
   // SESSION
   // =====================================================
@@ -206,6 +212,35 @@ class AuthRepoImpl implements AuthRepo {
       String imagePath,
       ) async {
     throw UnimplementedError();
+  }
+
+  @override
+  Future<void> deleteAccount() async {
+    try {
+      final uid = getCurrentUserId();
+      final currentUser = _auth.currentUser;
+
+      // 1. Purge remote Cloud Firestore document link references
+      if (uid != null) {
+        await _users.doc(uid).delete();
+      }
+
+      // 2. Kill credential access tokens on Firebase Auth servers
+      if (currentUser != null) {
+        await currentUser.delete();
+      }
+
+      // 3. Clear local session tokens inside SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool("isLoggedIn", false);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        throw Exception("Security block: This request requires a fresh login sequence before termination processing.");
+      }
+      throw Exception(e.message ?? "Profile lifecycle decommissioning failed.");
+    } catch (e) {
+      throw Exception("De-registration tracking runtime fault: $e");
+    }
   }
 
   // =====================================================

@@ -1,3 +1,4 @@
+// File: lib/view/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -16,11 +17,12 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _formKey = GlobalKey<FormState>(); // Added FormKey
+  final _formKey = GlobalKey<FormState>();
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
   bool isPasswordVisible = false;
+  String? _errorMessage; // 1. Added variable to hold the error
 
   @override
   void dispose() {
@@ -29,11 +31,12 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _handleLogin() async {
+  Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
     final vm = context.read<AuthViewModel>();
 
+    // 1. Attempt the login
     final success = await vm.login(
       email: emailController.text.trim(),
       password: passwordController.text.trim(),
@@ -41,23 +44,109 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
 
+    // 2. Handle outcome
     if (success) {
-      Fluttertoast.showToast(msg: "Welcome to SmartShelf!");
-
-      if (!mounted) return;
-
-      // This wipes away any blocking splash/login screens from the stack
-      // and launches your clean MainLayoutScreen fresh.
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const MainLayoutScreen()),
-            (route) => false, // Deletes all previous history layers
+            (route) => false,
       );
-
     } else {
-      // Shows whatever error occurred (wrong password or unverified email)
-      Fluttertoast.showToast(msg: vm.error ?? "Login Failed");
+      // THIS IS THE FIX: The Repo throws the error, the ViewModel catches it,
+      // now we display it here.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(vm.error ?? "Login failed. Please check your credentials."),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
+  }
+
+  // =====================================================
+  // FORGOT PASSWORD DIALOG
+  // =====================================================
+  void _showForgotPasswordDialog() {
+    final resetEmailController = TextEditingController();
+    final dialogFormKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            "Reset Password",
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, color: AppColor.primary),
+          ),
+          content: Form(
+            key: dialogFormKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Enter your registered email address to receive a secure password reset link.",
+                  style: GoogleFonts.manrope(fontSize: 14, color: AppColor.secondary),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: resetEmailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    hintText: "example@domain.com",
+                    prefixIcon: const Icon(Icons.email_outlined, color: AppColor.secondary),
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColor.primary, width: 2),
+                    ),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) return "Email is required";
+                    if (!value.contains('@')) return "Enter a valid email";
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text("Cancel", style: GoogleFonts.manrope(color: AppColor.secondary)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColor.primary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                if (!dialogFormKey.currentState!.validate()) return;
+
+                final authVm = context.read<AuthViewModel>();
+                final email = resetEmailController.text.trim();
+
+                Navigator.pop(context);
+
+                final success = await authVm.sendPasswordResetEmail(email);
+                if (success) {
+                  Fluttertoast.showToast(msg: "Password reset link sent to $email", toastLength: Toast.LENGTH_LONG);
+                } else {
+                  Fluttertoast.showToast(msg: authVm.error ?? "Failed to send reset link", toastLength: Toast.LENGTH_LONG);
+                }
+              },
+              child: Text("Send Link", style: GoogleFonts.spaceGrotesk(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -75,7 +164,7 @@ class _LoginScreenState extends State<LoginScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Form(
-            key: _formKey, // Wrapped in Form
+            key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -100,6 +189,33 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
+
+                // 4. DISPLAY ERROR BANNER HERE
+                if (_errorMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 20),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _errorMessage!,
+                              style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
                 const SizedBox(height: 48),
 
                 // EMAIL
@@ -113,7 +229,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 10),
 
-                TextFormField( // Changed to TextFormField
+                TextFormField(
                   controller: emailController,
                   keyboardType: TextInputType.emailAddress,
                   style: GoogleFonts.manrope(fontSize: 16, color: AppColor.neutral),
@@ -161,7 +277,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 10),
 
-                TextFormField( // Changed to TextFormField
+                TextFormField(
                   controller: passwordController,
                   obscureText: !isPasswordVisible,
                   style: GoogleFonts.manrope(fontSize: 16, color: AppColor.neutral),
@@ -207,7 +323,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => Fluttertoast.showToast(msg: "Reset password coming soon"),
+                    onPressed: _showForgotPasswordDialog,
                     style: TextButton.styleFrom(padding: EdgeInsets.zero),
                     child: Text(
                       "Forgot Password?",

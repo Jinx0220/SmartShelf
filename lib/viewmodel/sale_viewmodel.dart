@@ -276,59 +276,6 @@ class SaleViewModel extends ChangeNotifier {
     }
   }
 
-  Future<void> addHistoricalSale(String productName, int quantity, DateTime date) async {
-    try {
-      if (_sales != null) {
-        final bool isDuplicate = _sales!.any((s) =>
-        s.productName.trim().toLowerCase() == productName.trim().toLowerCase() &&
-            s.quantity == quantity &&
-            s.timestamp.year == date.year &&
-            s.timestamp.month == date.month &&
-            s.timestamp.day == date.day
-        );
-
-        if (isDuplicate) {
-          debugPrint("Duplicate prevention: Record for '$productName' on targeted window skipped.");
-          return;
-        }
-      }
-
-      final products = await _productRepo.getAllProduct();
-      final product = products.firstWhere(
-            (p) => p.name.trim().toLowerCase() == productName.trim().toLowerCase(),
-        orElse: () => ProductModel(
-          id: 'stub_${productName.replaceAll(' ', '_').toLowerCase()}',
-          name: productName,
-          price: 100.0,
-          stock: 0,
-          threshold: 0,
-          category: 'Imported',
-        ),
-      );
-
-      final int unitPrice = product.price.toInt();
-      final int totalPrice = unitPrice * quantity;
-
-      final newSale = SaleModel(
-        id: "${DateTime.now().microsecondsSinceEpoch.toString()}_${product.id ?? 'unknown'}",
-        productId: product.id ?? 'unknown',
-        productName: product.name,
-        quantity: quantity,
-        totalPrice: totalPrice,
-        unitPrice: unitPrice,
-        timestamp: date,
-        notes: "Imported from CSV",
-      );
-
-      await _saleRepo.addSale(newSale);
-      await refreshDashboard();
-      notifyListeners();
-
-    } catch (e) {
-      debugPrint("Error adding historical sale: $e");
-    }
-  }
-
   Future<void> addHistoricalSaleWithProfile({
     required String productName,
     required int quantity,
@@ -336,55 +283,80 @@ class SaleViewModel extends ChangeNotifier {
     required double fallbackPrice,
     required String category,
   }) async {
-    try {
-      if (_sales != null) {
-        final bool isDuplicate = _sales!.any((s) =>
-        s.productName.trim().toLowerCase() == productName.trim().toLowerCase() &&
-            s.quantity == quantity &&
-            s.timestamp.year == date.year &&
-            s.timestamp.month == date.month &&
-            s.timestamp.day == date.day
-        );
-        if (isDuplicate) return;
+    if (_sales != null) {
+      final bool isDuplicate = _sales!.any((s) =>
+      s.productName.trim().toLowerCase() == productName.trim().toLowerCase() &&
+          s.quantity == quantity &&
+          s.timestamp.year == date.year &&
+          s.timestamp.month == date.month &&
+          s.timestamp.day == date.day
+      );
+      if (isDuplicate) return;
+    }
+
+    // Fetch the latest master snapshot catalog from your repository
+    final products = await _productRepo.getAllProduct() ?? [];
+    ProductModel? targetProduct;
+
+    // Try locating an existing product in the store with a matching name
+    for (var p in products) {
+      if (p.name.trim().toLowerCase() == productName.trim().toLowerCase()) {
+        targetProduct = p;
+        break;
       }
+    }
 
-      final products = await _productRepo.getAllProduct();
-      ProductModel? targetProduct;
+    // If the product doesn't exist, handle database creation safely
+    if (targetProduct == null) {
+      // Generate a clean document ID prefix string
+      final String cleanId = "prod_${DateTime.now().millisecondsSinceEpoch}_${productName.replaceAll(' ', '_').toLowerCase()}";
 
-      try {
-        targetProduct = products.firstWhere(
-              (p) => p.name.trim().toLowerCase() == productName.trim().toLowerCase(),
-        );
-      } catch (_) {
-        final String newId = 'prod_${productName.replaceAll(' ', '_').toLowerCase()}';
-        targetProduct = ProductModel(
-          id: newId,
-          name: productName,
-          price: fallbackPrice,
-          stock: 50,
-          threshold: 10,
-          category: category,
-        );
-        await _productRepo.updateProduct(targetProduct);
-      }
-
-      final int unitPrice = targetProduct.price.toInt();
-      final int totalPrice = unitPrice * quantity;
-
-      final newSale = SaleModel(
-        id: "${DateTime.now().microsecondsSinceEpoch.toString()}_${targetProduct.id ?? 'unknown'}",
-        productId: targetProduct.id ?? 'unknown',
-        productName: targetProduct.name,
-        quantity: quantity,
-        totalPrice: totalPrice,
-        unitPrice: unitPrice,
-        timestamp: date,
-        notes: "Imported via Unified Sheet Manager",
+      targetProduct = ProductModel(
+        id: cleanId,
+        name: productName,
+        price: fallbackPrice,
+        stock: 100, // Give it an initial baseline stock layout
+        threshold: 10,
+        category: category,
       );
 
+      try {
+        // 🟢 FIX: Use addProduct instead of updateProduct so Firestore builds the document!
+        await _productRepo.addProduct(targetProduct);
+        debugPrint("📦 Successfully created missing catalog item: ${targetProduct.name}");
+      } catch (e) {
+        debugPrint("⚠️ Failed to write new fallback product document: $e");
+      }
+    } else {
+      // If the product does exist, update its stock levels logically
+      try {
+        final updatedStock = (targetProduct.stock ?? 0) >= quantity ? targetProduct.stock - quantity : 0;
+        await _productRepo.updateProduct(targetProduct.copyWith(stock: updatedStock));
+      } catch (e) {
+        debugPrint("⚠️ Failed to update existing stock matrix: $e");
+      }
+    }
+
+    // Generate and append the genuine transaction ledger receipt
+    final int unitPrice = targetProduct.price.toInt();
+    final int totalPrice = unitPrice * quantity;
+
+    final newSale = SaleModel(
+      id: "sale_${DateTime.now().microsecondsSinceEpoch}_${targetProduct.id}",
+      productId: targetProduct.id ?? 'unknown',
+      productName: targetProduct.name,
+      quantity: quantity,
+      totalPrice: totalPrice,
+      unitPrice: unitPrice,
+      timestamp: date,
+      notes: "Imported via Unified Sheet Manager",
+    );
+
+    try {
       await _saleRepo.addSale(newSale);
     } catch (e) {
-      debugPrint("Error routing unified record entry processing threads: $e");
+      debugPrint("💥 Fatal Sale Write Error: $e");
+      rethrow; // Pass up to the outer exception handler gracefully
     }
   }
 

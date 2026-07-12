@@ -15,6 +15,7 @@ import '../viewmodel/auth_viewmodel.dart';
 import '../viewmodel/settings_viewmodel.dart';
 import '../viewmodel/product_viewmodel.dart';
 import '../viewmodel/sale_viewmodel.dart';
+import '../viewmodel/dashboard_viewmodel.dart'; // 🟢 ADD THIS IMPORT
 import '../model/user_model.dart';
 import 'login_screen.dart';
 
@@ -76,12 +77,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final TextEditingController deleteController = TextEditingController();
     final navigator = Navigator.of(context);
     final authVm = context.read<AuthViewModel>();
+    final dashboardVm = context.read<DashboardViewModel>(); // 🟢 ADD THIS
 
     bool? confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text("Delete Account", style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, color: AppColor.error)),
+        title: Text(
+          "Delete Account",
+          style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, color: AppColor.error),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -91,7 +96,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: GoogleFonts.manrope(fontSize: 14),
             ),
             const SizedBox(height: 12),
-            Text("Type 'DELETE' to confirm:", style: GoogleFonts.manrope(fontSize: 12, fontWeight: FontWeight.bold, color: AppColor.secondary)),
+            Text(
+              "Type 'DELETE' to confirm:",
+              style: GoogleFonts.manrope(fontSize: 12, fontWeight: FontWeight.bold, color: AppColor.secondary),
+            ),
             const SizedBox(height: 6),
             TextField(
               controller: deleteController,
@@ -118,6 +126,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       bool success = await authVm.deleteAccountPermanently();
 
       if (success) {
+        // 🟢 ADD THIS: Reset dashboard before navigating
+        await dashboardVm.loadDashboardData();
+
         navigator.pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const LoginScreen()),
               (route) => false,
@@ -205,7 +216,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: GoogleFonts.manrope(color: AppColor.secondary))),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: GoogleFonts.manrope(color: AppColor.secondary)),
+          ),
         ],
       ),
     );
@@ -215,14 +229,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       color: Colors.grey.shade50,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: Colors.grey.shade200)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
       child: ListTile(
         leading: const Icon(Icons.insert_drive_file_outlined, color: AppColor.primary),
-        title: Text(filename, style: GoogleFonts.manrope(fontSize: 12, fontWeight: FontWeight.bold, color: AppColor.neutral)),
+        title: Text(
+          filename,
+          style: GoogleFonts.manrope(fontSize: 12, fontWeight: FontWeight.bold, color: AppColor.neutral),
+        ),
         onTap: () async {
           final navigator = Navigator.of(context);
           final productVm = context.read<ProductViewModel>();
           final saleVm = context.read<SaleViewModel>();
+          final dashboardVm = context.read<DashboardViewModel>(); // 🟢 ADD THIS
 
           navigator.pop();
           Fluttertoast.showToast(msg: "Verifying backup file integrity...");
@@ -242,9 +263,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             await productVm.restoreProductsFromJson(decodedData['products'] as List<dynamic>);
             await saleVm.restoreSalesFromJson(decodedData['sales'] as List<dynamic>);
 
-            Fluttertoast.showToast(msg: "Inventory and sales history successfully restored!", backgroundColor: AppColor.success, textColor: Colors.white);
+            // 🟢 ADD THIS: Refresh dashboard after restore
+            await dashboardVm.loadDashboardData();
+
+            Fluttertoast.showToast(
+              msg: "Inventory and sales history successfully restored!",
+              backgroundColor: AppColor.success,
+              textColor: Colors.white,
+            );
           } catch (e) {
-            Fluttertoast.showToast(msg: "Failed to read backup: The file layout is corrupted.", backgroundColor: AppColor.error);
+            Fluttertoast.showToast(
+              msg: "Failed to read backup: The file layout is corrupted.",
+              backgroundColor: AppColor.error,
+            );
           }
         },
       ),
@@ -259,6 +290,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       final saleVm = context.read<SaleViewModel>();
+      final dashboardVm = context.read<DashboardViewModel>(); // 🟢 ADD THIS
+
       await saleVm.clearAllSalesBatch();
 
       for (int i = 60; i >= 0; i--) {
@@ -272,7 +305,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       }
 
-      Fluttertoast.showToast(msg: "Sample sales data loaded successfully!", backgroundColor: AppColor.success);
+      // 🟢 ADD THIS: Refresh dashboard after mock data injection
+      await dashboardVm.loadDashboardData();
+
+      Fluttertoast.showToast(
+        msg: "Sample sales data loaded successfully!",
+        backgroundColor: AppColor.success,
+      );
     } catch (e) {
       Fluttertoast.showToast(msg: "Failed to generate sample data.");
     } finally {
@@ -305,7 +344,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       backgroundColor: layoutBackground,
       appBar: AppBar(
-        title: Text('Settings', style: GoogleFonts.spaceGrotesk(fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white)),
+        title: Text(
+          'Settings',
+          style: GoogleFonts.spaceGrotesk(fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white),
+        ),
         backgroundColor: AppColor.primary,
         elevation: 0,
         centerTitle: true,
@@ -342,7 +384,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           SwitchListTile(
             secondary: Icon(Icons.dark_mode_outlined, color: secondaryTextColor),
-            title: Text('Dark Mode Display', style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w500, color: primaryTextColor)),
+            title: Text(
+              'Dark Mode Display',
+              style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w500, color: primaryTextColor),
+            ),
             value: darkThemeActive,
             onChanged: (value) => themeVm.toggleTheme(),
             activeThumbColor: AppColor.primary,
@@ -395,9 +440,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildSectionHeader('Developer Sandboxing'),
           ListTile(
             leading: Icon(_isInjectingMock ? Icons.hourglass_top : Icons.data_array, color: secondaryTextColor),
-            title: Text('Generate Demo Data (For Testing)', style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w500, color: primaryTextColor)),
-            subtitle: Text('Fill the app with 60 days of sample sales history to view charts', style: GoogleFonts.manrope(fontSize: 12, color: secondaryTextColor)),
-            trailing: _isInjectingMock ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) : Icon(Icons.chevron_right, color: secondaryTextColor),
+            title: Text(
+              'Generate Demo Data (For Testing)',
+              style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w500, color: primaryTextColor),
+            ),
+            subtitle: Text(
+              'Fill the app with 60 days of sample sales history to view charts',
+              style: GoogleFonts.manrope(fontSize: 12, color: secondaryTextColor),
+            ),
+            trailing: _isInjectingMock
+                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                : Icon(Icons.chevron_right, color: secondaryTextColor),
             onTap: _isInjectingMock ? null : _injectMockSalesData,
           ),
 
@@ -408,26 +461,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'System Tracking Currency',
             value: settingsVm.currency,
             textColor: primaryTextColor,
-            darkThemeActive: darkThemeActive, // <-- Add this line
+            darkThemeActive: darkThemeActive,
             items: const ['NPR', 'USD', 'INR', 'EUR', 'GBP'],
             onChanged: (value) async {
               if (value != null) {
                 await settingsVm.saveCurrency(value);
-                Fluttertoast.showToast(msg: "Currency updated to: $value", backgroundColor: AppColor.primary, textColor: Colors.white);
+                Fluttertoast.showToast(
+                  msg: "Currency updated to: $value",
+                  backgroundColor: AppColor.primary,
+                  textColor: Colors.white,
+                );
               }
             },
           ),
           ListTile(
             leading: Icon(Icons.language, color: secondaryTextColor),
-            title: Text('App Language', style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w500, color: primaryTextColor)),
-            trailing: Text('English', style: GoogleFonts.manrope(fontSize: 14, color: secondaryTextColor)),
+            title: Text(
+              'App Language',
+              style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w500, color: primaryTextColor),
+            ),
+            trailing: Text(
+              'English',
+              style: GoogleFonts.manrope(fontSize: 14, color: secondaryTextColor),
+            ),
           ),
           _buildDropdownTile(
             icon: Icons.calendar_today,
             title: 'Weekly Day-Off',
             value: _getDayLabel(settingsVm.weeklyOffDay),
             textColor: primaryTextColor,
-            darkThemeActive: darkThemeActive, // <-- Add this line
+            darkThemeActive: darkThemeActive,
             items: const ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
             onChanged: (value) async {
               if (value != null) {
@@ -465,7 +528,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
-      child: Text(title, style: GoogleFonts.spaceGrotesk(fontSize: 14, fontWeight: FontWeight.w600, color: AppColor.primary)),
+      child: Text(
+        title,
+        style: GoogleFonts.spaceGrotesk(fontSize: 14, fontWeight: FontWeight.w600, color: AppColor.primary),
+      ),
     );
   }
 
@@ -479,8 +545,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }) {
     return ListTile(
       leading: Icon(icon, color: subColor ?? AppColor.secondary),
-      title: Text(title, style: GoogleFonts.manrope(color: textColor ?? AppColor.neutral, fontWeight: FontWeight.w500, fontSize: 15)),
-      subtitle: Text(subtitle, style: GoogleFonts.manrope(fontSize: 12, color: subColor ?? AppColor.secondary)),
+      title: Text(
+        title,
+        style: GoogleFonts.manrope(color: textColor ?? AppColor.neutral, fontWeight: FontWeight.w500, fontSize: 15),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: GoogleFonts.manrope(fontSize: 12, color: subColor ?? AppColor.secondary),
+      ),
       trailing: Icon(Icons.chevron_right, color: subColor ?? AppColor.secondary),
       onTap: onTap,
     );
@@ -492,12 +564,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required String value,
     required List<String> items,
     required Color textColor,
-    required bool darkThemeActive, // <-- Added this parameter
+    required bool darkThemeActive,
     required Function(String?) onChanged,
   }) {
     return ListTile(
       leading: Icon(icon, color: AppColor.secondary),
-      title: Text(title, style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w500, color: textColor)),
+      title: Text(
+        title,
+        style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w500, color: textColor),
+      ),
       trailing: DropdownButton<String>(
         value: value,
         dropdownColor: darkThemeActive ? const Color(0xFF2C2C2C) : AppColor.background,
@@ -506,6 +581,113 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onChanged: onChanged,
         underline: const SizedBox(),
         icon: const Icon(Icons.arrow_drop_down, color: AppColor.primary),
+      ),
+    );
+  }
+
+  // 🟢 FIXED: Now properly refreshes dashboard after deletion
+  void _showDeleteConfirmation(BuildContext context) {
+    final navigator = Navigator.of(context);
+    final productVm = context.read<ProductViewModel>();
+    final saleVm = context.read<SaleViewModel>();
+    final dashboardVm = context.read<DashboardViewModel>(); // 🟢 ADD THIS
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Erase All Store Data',
+          style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w600, color: AppColor.error),
+        ),
+        content: const Text(
+          'This will permanently delete all your products, current stock data, and sales history. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: GoogleFonts.manrope(color: AppColor.secondary)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              // 1. Clear all data from repositories
+              await productVm.clearAllProductsBatch();
+              await saleVm.clearAllSalesBatch();
+
+              // 2. Clear local caches (using your methods)
+              productVm.clearLocalCacheData();
+              saleVm.clearLocalCacheData();
+
+              // 🟢 CRITICAL FIX: Refresh dashboard to show zero values
+              await dashboardVm.loadDashboardData();
+
+              // 3. Close dialog
+              navigator.pop();
+
+              // 4. Show confirmation
+              Fluttertoast.showToast(
+                msg: 'All local store data has been completely reset.',
+                backgroundColor: AppColor.success,
+                textColor: Colors.white,
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColor.error,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text('Delete All Data', style: GoogleFonts.manrope(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🟢 FIXED: Now properly clears data before logout
+  void _showLogoutConfirmation(BuildContext context) {
+    final navigator = Navigator.of(context);
+    final authVm = context.read<AuthViewModel>();
+    final productVm = context.read<ProductViewModel>();
+    final saleVm = context.read<SaleViewModel>();
+    final dashboardVm = context.read<DashboardViewModel>(); // 🟢 ADD THIS
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Log Out',
+          style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w600, color: AppColor.error),
+        ),
+        content: const Text('Are you sure you want to log out? This will safely clear your active session logs.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: GoogleFonts.manrope(color: AppColor.secondary)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              // 1. Flush transient data models from application memory channels
+              productVm.clearLocalCacheData();
+              saleVm.clearLocalCacheData();
+
+              // 🟢 ADD THIS: Reset dashboard before logout
+              await dashboardVm.loadDashboardData();
+
+              // 2. Clear out authentication keys
+              await authVm.logout();
+
+              navigator.pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    (route) => false,
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColor.error,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text('Log Out', style: GoogleFonts.manrope(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }
@@ -521,26 +703,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Profile Information', style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w600, color: AppColor.primary)),
+        title: Text(
+          'Profile Information',
+          style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w600, color: AppColor.primary),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: _nameController,
-              decoration: InputDecoration(labelText: 'Full Name', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
+              decoration: InputDecoration(
+                labelText: 'Full Name',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _emailController,
-              decoration: InputDecoration(labelText: 'Email Address', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
+              decoration: InputDecoration(
+                labelText: 'Email Address',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              ),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: GoogleFonts.manrope(color: AppColor.secondary))),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: GoogleFonts.manrope(color: AppColor.secondary)),
+          ),
           ElevatedButton(
             onPressed: () async {
-              final updatedUser = user!.copyWith(fullName: _nameController.text.trim(), email: _emailController.text.trim());
+              final updatedUser = user!.copyWith(
+                fullName: _nameController.text.trim(),
+                email: _emailController.text.trim(),
+              );
               final success = await authVm.updateProfile(updatedUser);
 
               if (success) {
@@ -550,7 +747,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Fluttertoast.showToast(msg: authVm.error ?? 'Failed to update profile changes.');
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColor.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColor.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             child: Text('Save Changes', style: GoogleFonts.manrope(color: Colors.white)),
           ),
         ],
@@ -569,26 +769,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Store Settings', style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w600, color: AppColor.primary)),
+        title: Text(
+          'Store Settings',
+          style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w600, color: AppColor.primary),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: _storeNameController,
-              decoration: InputDecoration(labelText: 'Store Name', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
+              decoration: InputDecoration(
+                labelText: 'Store Name',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _storeAddressController,
-              decoration: InputDecoration(labelText: 'Store Address', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
+              decoration: InputDecoration(
+                labelText: 'Store Address',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              ),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: GoogleFonts.manrope(color: AppColor.secondary))),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: GoogleFonts.manrope(color: AppColor.secondary)),
+          ),
           ElevatedButton(
             onPressed: () async {
-              final updatedUser = user!.copyWith(storeName: _storeNameController.text.trim(), storeAddress: _storeAddressController.text.trim());
+              final updatedUser = user!.copyWith(
+                storeName: _storeNameController.text.trim(),
+                storeAddress: _storeAddressController.text.trim(),
+              );
               final success = await authVm.updateProfile(updatedUser);
 
               if (success) {
@@ -598,76 +813,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Fluttertoast.showToast(msg: authVm.error ?? 'Failed to update store configurations.');
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColor.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColor.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             child: Text('Save Config', style: GoogleFonts.manrope(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showDeleteConfirmation(BuildContext context) {
-    final navigator = Navigator.of(context);
-    final productVm = context.read<ProductViewModel>();
-    final saleVm = context.read<SaleViewModel>();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Erase All Store Data', style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w600, color: AppColor.error)),
-        content: const Text('This will permanently delete all your products, current stock data, and sales history. This action cannot be undone.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: GoogleFonts.manrope(color: AppColor.secondary))),
-          ElevatedButton(
-            onPressed: () async {
-              await productVm.clearAllProductsBatch();
-              await saleVm.clearAllSalesBatch();
-
-              productVm.clearLocalCacheData();
-              saleVm.clearLocalCacheData();
-
-              navigator.pop();
-              Fluttertoast.showToast(msg: 'All local store data has been completely reset.');
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColor.error, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: Text('Delete All Data', style: GoogleFonts.manrope(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showLogoutConfirmation(BuildContext context) {
-    final navigator = Navigator.of(context);
-    final authVm = context.read<AuthViewModel>();
-    final productVm = context.read<ProductViewModel>();
-    final saleVm = context.read<SaleViewModel>();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Log Out', style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w600, color: AppColor.error)),
-        content: const Text('Are you sure you want to log out? This will safely clear your active session logs.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: GoogleFonts.manrope(color: AppColor.secondary))),
-          ElevatedButton(
-            onPressed: () async {
-              // 1. Flush transient data models from application memory channels
-              productVm.clearLocalCacheData(); // Add a method to clear arrays if applicable
-              saleVm.clearLocalCacheData();    // Clears arrays to prevent cross-account leakage
-
-              // 2. Clear out authentication keys
-              await authVm.logout();
-
-              navigator.pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    (route) => false,
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColor.error, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: Text('Log Out', style: GoogleFonts.manrope(color: Colors.white)),
           ),
         ],
       ),
@@ -679,23 +829,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('About SmartShelf', style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w600, color: AppColor.primary)),
+        title: Text(
+          'About SmartShelf',
+          style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w600, color: AppColor.primary),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.store, size: 50, color: AppColor.primary),
             const SizedBox(height: 16),
-            Text('SmartShelf Inventory Manager', style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.bold, color: AppColor.neutral)),
+            Text(
+              'SmartShelf Inventory Manager',
+              style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.bold, color: AppColor.neutral),
+            ),
             const SizedBox(height: 8),
-            Text('Smart Inventory & Sales Ledger', style: GoogleFonts.manrope(color: AppColor.secondary), textAlign: TextAlign.center),
+            Text(
+              'Smart Inventory & Sales Ledger',
+              style: GoogleFonts.manrope(color: AppColor.secondary),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 8),
-            Text('© 2026 SmartShelf. All rights reserved.', style: GoogleFonts.manrope(fontSize: 11, color: AppColor.secondary), textAlign: TextAlign.center),
+            Text(
+              '© 2026 SmartShelf. All rights reserved.',
+              style: GoogleFonts.manrope(fontSize: 11, color: AppColor.secondary),
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('Close', style: GoogleFonts.manrope(color: AppColor.secondary))),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close', style: GoogleFonts.manrope(color: AppColor.secondary)),
+          ),
         ],
       ),
     );

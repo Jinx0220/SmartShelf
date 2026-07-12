@@ -8,7 +8,10 @@ import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:smartshelf/viewmodel/analytics_viewmodel.dart';
 import 'package:smartshelf/viewmodel/dashboard_viewmodel.dart';
+import 'package:smartshelf/viewmodel/order_viewmodel.dart';
+import 'package:smartshelf/viewmodel/prediction_viewmodel.dart';
 import '../utils/colors.dart';
 import '../utils/formatters.dart';
 import '../viewmodel/product_viewmodel.dart';
@@ -43,12 +46,14 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     final productVm = context.read<ProductViewModel>();
     final saleVm = context.read<SaleViewModel>();
     final authVm = context.read<AuthViewModel>();
+    final dashboardVm = context.read<DashboardViewModel>();
 
     try {
       await Future.wait([
         productVm.getAllProduct(),
         saleVm.getAllSales(),
         authVm.loadCurrentUser(),
+        dashboardVm.loadDashboardData(),
       ]);
     } catch (e) {
       debugPrint("Error loading dashboard metrics: $e");
@@ -66,6 +71,61 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     }
   }
 
+  // 🟢 NEW METHOD: Refresh all ViewModels after CSV import
+  Future<void> _refreshAllViewModels() async {
+    final productVm = context.read<ProductViewModel>();
+    final saleVm = context.read<SaleViewModel>();
+    final dashboardVm = context.read<DashboardViewModel>();
+
+    debugPrint("🔄 Refreshing all ViewModels...");
+
+    // 1. Core Models
+    await productVm.getAllProduct();
+    await saleVm.getAllSales();
+
+    // 2. Dashboard
+    try {
+      await dashboardVm.loadDashboardData();
+      debugPrint("🔄 DashboardViewModel updated.");
+    } catch (e) {
+      debugPrint("Dashboard refresh failed: $e");
+    }
+
+    // 3. Analytics
+    try {
+      final analyticsVm = context.read<AnalyticsViewModel>();
+      await analyticsVm.loadAllData();
+      debugPrint("🔄 AnalyticsViewModel updated.");
+    } catch (e) {
+      debugPrint("Analytics refresh failed: $e");
+    }
+
+    // 4. Predictions
+    try {
+      final predictionVm = context.read<PredictionViewModel>();
+      final products = productVm.allProducts ?? [];
+      final sales = saleVm.sales ?? [];
+      await predictionVm.generatePredictions(products, sales, 30);
+      debugPrint("🔄 PredictionViewModel updated.");
+    } catch (e) {
+      debugPrint("Predictions refresh failed: $e");
+    }
+
+    // 5. Orders
+    try {
+      final orderVm = context.read<OrderViewModel>();
+      final products = productVm.allProducts ?? [];
+      final predictionVm = context.read<PredictionViewModel>();
+      final predictions = predictionVm.predictions ?? [];
+      await orderVm.generateSuggestedOrder(products, predictions);
+      debugPrint("🔄 OrderViewModel updated.");
+    } catch (e) {
+      debugPrint("Orders refresh failed: $e");
+    }
+
+    debugPrint("✅ All ViewModels refreshed!");
+  }
+
   Future<void> _importUnifiedCSV(BuildContext context) async {
     final saleVm = context.read<SaleViewModel>();
     final productVm = context.read<ProductViewModel>();
@@ -73,7 +133,6 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     debugPrint("=== CSV IMPORT STARTED ===");
 
     try {
-      debugPrint("Opening File Picker...");
       FilePickerResult? result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['csv'],
@@ -81,56 +140,39 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
       );
 
       if (result == null) {
-        debugPrint("File picker was cancelled by user.");
         Fluttertoast.showToast(msg: "File picking cancelled.");
         return;
       }
 
-      debugPrint("File selected successfully: ${result.files.single.name}");
       String csvString = "";
-
       if (result.files.single.bytes != null) {
-        debugPrint("Reading file content via memory bytes...");
         csvString = utf8.decode(result.files.single.bytes!);
       } else if (result.files.single.path != null) {
-        debugPrint("Reading file content via local system path...");
         final file = File(result.files.single.path!);
         csvString = await file.readAsString();
       }
 
-      debugPrint("CSV Total String Length: ${csvString.length}");
       if (csvString.trim().isEmpty) {
-        debugPrint("Warning: CSV text payload is completely empty.");
         Fluttertoast.showToast(msg: "Selected CSV file is empty.");
         return;
       }
 
       List<String> lines = csvString.split('\n');
-      debugPrint("Total lines discovered in CSV payload: ${lines.length}");
       int progressCount = 0;
+      final DateTime fallbackNow = DateTime.now();
 
       for (int i = 1; i < lines.length; i++) {
         String currentLine = lines[i].trim();
         if (currentLine.isEmpty) continue;
 
         List<String> columns = currentLine.split(',');
-        debugPrint("Processing Row #$i -> Row Raw Text: '$currentLine' -> Discovered Columns Count: ${columns.length}");
+        if (columns.length < 4) continue;
 
-        if (columns.length < 4) {
-          debugPrint("❌ SKIPPING ROW #$i: Columns count (${columns.length}) is less than 4 required data fields.");
-          continue;
-        }
-
-        // 🆕 ADDED FOR DEMO: Force dates to Today's date (July 2026) so they show up
-        // instantly on your dashboard's "TODAY'S SALES" and "WEEKLY SALES" cards!
-        DateTime saleDate = DateTime.now();
-
+        DateTime saleDate = fallbackNow;
         String pName = columns[1].trim();
         int qty = int.tryParse(columns[2].trim()) ?? 0;
         double customPrice = double.tryParse(columns[3].trim()) ?? 100.0;
         String categoryName = columns.length > 4 ? columns[4].trim() : 'General';
-
-        debugPrint("Pushing row records to Firestore -> Item: $pName, Qty: $qty...");
 
         await saleVm.addHistoricalSaleWithProfile(
           productName: pName,
@@ -143,27 +185,15 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
         progressCount++;
       }
 
-      debugPrint("=== LOOP COMPLETED. Total successfully written: $progressCount ===");
-
       Fluttertoast.showToast(
         msg: "Successfully imported $progressCount transaction history logs!",
         backgroundColor: AppColor.success,
         textColor: Colors.white,
       );
 
+      // 🟢 CALL THE NEW REFRESH METHOD
       if (context.mounted) {
-        // Refresh individual view models
-        await productVm.getAllProduct();
-        await saleVm.getAllSales();
-
-        // 🆕 ADDED FOR REFRESH: Force your DashboardViewModel to update all screens right now!
-        try {
-          final dashboardVm = context.read<DashboardViewModel>();
-          await dashboardVm.loadDashboardData();
-          debugPrint("🔄 DashboardViewModel refreshed successfully!");
-        } catch (e) {
-          debugPrint("⚠️ DashboardViewModel reload skipped: $e");
-        }
+        await _refreshAllViewModels();
       }
     } catch (e) {
       debugPrint("💥 CRITICAL CORE FAILURE: $e");
@@ -219,31 +249,24 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
 
       if (status && target.id != null && !target.id!.startsWith('stub_')) {
         await productVm.updateProduct(target.copyWith(stock: target.stock - 1));
+        if (context.mounted) {
+          await context.read<DashboardViewModel>().loadDashboardData();
+        }
         Fluttertoast.showToast(
           msg: "⚡ Quick Added: 1x $productName!",
           backgroundColor: AppColor.success,
           textColor: Colors.white,
-          toastLength: Toast.LENGTH_SHORT,
-        );
-      } else if (status) {
-        Fluttertoast.showToast(
-          msg: "⚡ Quick Added: 1x $productName (Demo Mode)!",
-          backgroundColor: AppColor.primary,
-          textColor: Colors.white,
-          toastLength: Toast.LENGTH_SHORT,
         );
       }
     } catch (e) {
-      Fluttertoast.showToast(
-        msg: "Quick sale error: $e",
-        backgroundColor: AppColor.error,
-        textColor: Colors.white,
-      );
+      debugPrint("Quick sale error: $e");
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // 🟢 Watch the dashboard pipeline changes live
+    final dashboardVm = context.watch<DashboardViewModel>();
     final productVm = context.watch<ProductViewModel>();
     final saleVm = context.watch<SaleViewModel>();
     final authVm = context.watch<AuthViewModel>();
@@ -252,9 +275,10 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     final sales = saleVm.sales ?? [];
     final user = authVm.user;
 
-    final int todaySalesAmount = saleVm.todaySales;
-    final int weeklySalesAmount = saleVm.weeklySales;
-    final int lowStockCount = products.where((p) => p.isLowStock).length;
+    // 🟢 Pull metrics straight out of your calculated dashboard data
+    final int todaySalesAmount = dashboardVm.todaySales;
+    final int weeklySalesAmount = dashboardVm.weeklySales;
+    final int lowStockCount = dashboardVm.lowStockCount;
 
     Map<String, int> productSalesMap = {};
     for (var sale in sales) {
@@ -811,7 +835,6 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     );
   }
 
-  // 🟢 FIXED: Completed the restock closure routine pipeline safely to prevent the layout crash
   void _showOrderDialog(BuildContext context, CriticalProduct product) {
     final int recommendedQty = (product.threshold - product.stock) < 0 ? 0 : (product.threshold - product.stock);
     final TextEditingController quantityController = TextEditingController(text: recommendedQty.toString());
@@ -913,7 +936,6 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     );
   }
 
-  // 🟢 ADDED: Action buttons with Import CSV and Products button
   Widget _buildActionButtons(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),

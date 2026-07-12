@@ -46,7 +46,6 @@ class DashboardViewModel extends ChangeNotifier {
   Map<String, int> get topProducts => _topProducts;
   String get greeting => _greeting;
 
-  // Setters
   void setLoading(bool value) {
     _loading = value;
     notifyListeners();
@@ -57,50 +56,135 @@ class DashboardViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Load dashboard data
+  // 🔴 FIXED: Clear all cached data before reloading
+  void _clearCachedData() {
+    _todaySales = 0;
+    _weeklySales = 0;
+    _lowStockCount = 0;
+    _totalProducts = 0;
+    _criticalProducts = [];
+    _topProducts = {};
+    _products = [];
+    _sales = [];
+    _user = null;
+    notifyListeners();
+  }
+
+  // 🔴 FIXED: Load dashboard data with proper cache clearing
   Future<void> loadDashboardData() async {
     setLoading(true);
     setError(null);
     try {
-      // Load all data in parallel
+      debugPrint("📊 [DASHBOARD DEBUG] Starting loadDashboardData...");
+
+      // 🔴 FIX 1: Clear all cached data first
+      _clearCachedData();
+
+      // 1. Parallel execution to pull clean snapshots from the cloud
       await Future.wait([
         _loadProducts(),
         _loadSales(),
         _loadUser(),
       ]);
 
-      // Calculate derived data after loading
+      debugPrint("📊 [DASHBOARD DEBUG] Raw Products Loaded Count: ${_products.length}");
+      debugPrint("📊 [DASHBOARD DEBUG] Raw Sales Loaded Count: ${_sales.length}");
+
+      // 2. Force calculations after data is loaded
       _calculateGreeting();
       _calculateTodaySales();
       _calculateWeeklySales();
       _calculateLowStockCount();
       _calculateCriticalProducts();
-      _calculateTopProducts();
       _calculateTotalProducts();
+
+      // 3. Calculate top products (async - handled separately)
+      await _calculateTopProducts();
+
+      debugPrint("📊 [DASHBOARD DEBUG] Calculated Today Sales: $_todaySales NPR");
+      debugPrint("📊 [DASHBOARD DEBUG] Calculated Weekly Sales: $_weeklySales NPR");
+      debugPrint("📊 [DASHBOARD DEBUG] Low Stock Count: $_lowStockCount");
 
       notifyListeners();
     } on Exception catch (e) {
+      debugPrint("💥 [DASHBOARD DEBUG] Exception: $e");
       setError(e.toString());
     } finally {
       setLoading(false);
     }
   }
 
+  // 🔴 FIXED: Force reset dashboard to zero (for deletion scenarios)
+  Future<void> resetDashboardData() async {
+    debugPrint("🔄 [DASHBOARD] Resetting all dashboard data to zero...");
+
+    // Clear local cache
+    _clearCachedData();
+
+    // Also clear repositories if needed
+    try {
+      // If you have delete methods in repos, call them here
+      // await _productRepo.deleteAllProducts();
+      // await _saleRepo.deleteAllSales();
+    } catch (e) {
+      debugPrint("Error clearing repository data: $e");
+    }
+
+    notifyListeners();
+    debugPrint("✅ [DASHBOARD] Dashboard reset complete");
+  }
+
+  // 🔴 FIXED: Force refresh after data deletion
+  Future<void> refreshAfterDeletion() async {
+    debugPrint("🔄 [DASHBOARD] Refreshing after data deletion...");
+
+    // Reset to zero first
+    _todaySales = 0;
+    _weeklySales = 0;
+    _lowStockCount = 0;
+    _totalProducts = 0;
+    _criticalProducts = [];
+    _topProducts = {};
+    notifyListeners();
+
+    // Then reload actual data from sources
+    await loadDashboardData();
+    debugPrint("✅ [DASHBOARD] Refresh after deletion complete");
+  }
+
   // Load products
   Future<void> _loadProducts() async {
-    final result = await _productRepo.getAllProduct();
-    _products = result ?? [];
+    try {
+      final result = await _productRepo.getAllProduct();
+      _products = result ?? [];
+      debugPrint("📦 [DASHBOARD] Products loaded: ${_products.length}");
+    } catch (e) {
+      debugPrint("❌ [DASHBOARD] Error loading products: $e");
+      _products = [];
+    }
   }
 
   // Load sales
   Future<void> _loadSales() async {
-    final result = await _saleRepo.getAllSales();
-    _sales = result ?? [];
+    try {
+      final result = await _saleRepo.getAllSales();
+      _sales = result ?? [];
+      debugPrint("📊 [DASHBOARD] Sales loaded: ${_sales.length}");
+    } catch (e) {
+      debugPrint("❌ [DASHBOARD] Error loading sales: $e");
+      _sales = [];
+    }
   }
 
   // Load user
   Future<void> _loadUser() async {
-    _user = await _authRepo.getUserProfile('current');
+    try {
+      _user = await _authRepo.getUserProfile('current');
+      debugPrint("👤 [DASHBOARD] User loaded: ${_user?.storeName ?? 'None'}");
+    } catch (e) {
+      debugPrint("❌ [DASHBOARD] Error loading user: $e");
+      _user = null;
+    }
   }
 
   // Calculate greeting
@@ -115,20 +199,26 @@ class DashboardViewModel extends ChangeNotifier {
     }
   }
 
-  // Calculate today's sales
+  // 🔴 FIXED: Calculate today's sales with proper date filtering
   void _calculateTodaySales() {
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    _todaySales = _sales
-        .where((s) => s.timestamp.isAfter(today))
-        .fold(0, (sum, s) => sum + s.totalPrice);
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59);
+
+    // Only count sales from today
+    _todaySales = _sales.where((s) {
+      final saleDate = s.timestamp;
+      return saleDate.isAfter(todayStart) && saleDate.isBefore(todayEnd);
+    }).fold(0, (sum, s) => sum + s.totalPrice);
   }
 
-  // Calculate weekly sales
+  // 🔴 FIXED: Calculate weekly sales with proper date filtering
   void _calculateWeeklySales() {
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final weekAgo = today.subtract(const Duration(days: 7));
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    final weekAgo = todayEnd.subtract(const Duration(days: 7));
+
+    // Only count sales from the last 7 days
     _weeklySales = _sales
         .where((s) => s.timestamp.isAfter(weekAgo))
         .fold(0, (sum, s) => sum + s.totalPrice);
@@ -147,10 +237,17 @@ class DashboardViewModel extends ChangeNotifier {
       ..sort((a, b) => (a.stock ?? 0).compareTo(b.stock ?? 0));
   }
 
-  // Calculate top products
-  void _calculateTopProducts() async {
-    final result = await _saleRepo.getTopProducts(limit: 5);
-    _topProducts = result ?? {};
+  // 🔴 FIXED: Calculate top products with proper error handling
+  Future<void> _calculateTopProducts() async {
+    try {
+      final result = await _saleRepo.getTopProducts(limit: 5);
+      _topProducts = result ?? {};
+      debugPrint("🏆 [DASHBOARD] Top products: ${_topProducts.length}");
+    } catch (e) {
+      debugPrint("❌ [DASHBOARD] Error calculating top products: $e");
+      _topProducts = {};
+    }
+    // Don't notify here - will be notified in loadDashboardData
   }
 
   // Calculate total products
@@ -158,7 +255,7 @@ class DashboardViewModel extends ChangeNotifier {
     _totalProducts = _products.length;
   }
 
-  // Refresh dashboard
+  // Refresh dashboard Hook
   Future<void> refreshDashboard() async {
     await loadDashboardData();
   }
@@ -205,7 +302,7 @@ class DashboardViewModel extends ChangeNotifier {
 
   // Check if dashboard is ready
   bool isDashboardReady() {
-    return _products.isNotEmpty && _sales.isNotEmpty && !_loading;
+    return !_loading;
   }
 
   // Get percentage change
@@ -233,7 +330,7 @@ class DashboardViewModel extends ChangeNotifier {
     final productMap = <String, String>{};
     for (var product in _products) {
       if (product.id != null) {
-        productMap[product.id!] = product.name ?? 'Unknown';
+        productMap[product.id!] = product.name;
       }
     }
 
@@ -254,16 +351,16 @@ class DashboardViewModel extends ChangeNotifier {
   List<DashboardCriticalProduct> getCriticalProductsList() {
     return _criticalProducts.map((product) {
       return DashboardCriticalProduct(
-        name: product.name ?? 'Unknown',
-        stock: product.stock ?? 0,
-        threshold: product.threshold ?? 0,
+        name: product.name,
+        stock: product.stock,
+        threshold: product.threshold,
         productId: product.id ?? '',
       );
     }).toList();
   }
 }
 
-// Helper classes
+// Structural helper classes for widget injection
 class DashboardTopProduct {
   final String name;
   final int quantity;

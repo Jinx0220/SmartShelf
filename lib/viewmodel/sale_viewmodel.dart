@@ -180,18 +180,41 @@ class SaleViewModel extends ChangeNotifier {
     required DateTime timestamp,
     required String productName,
   }) async {
-    dynamic targetTimestamp = timestamp;
+    try {
+      // 🟢 Try to find existing product by name
+      final products = await _productRepo.getAllProduct();
+      ProductModel? existingProduct;
+      try {
+        existingProduct = products.firstWhere(
+              (p) => p.name.toLowerCase() == productName.toLowerCase(),
+        );
+      } catch (_) {
+        // Create a stub product with the NAME
+        existingProduct = ProductModel(
+          id: 'stub_${productName.replaceAll(' ', '_').toLowerCase()}',
+          name: productName, // ✅ Store the NAME
+          price: 100.0,
+          stock: 50,
+          threshold: 5,
+          category: 'Mock',
+        );
+      }
 
-    final mockSale = SaleModel(
-      id: DateTime.now().microsecondsSinceEpoch.toString() + totalPrice.toInt().toString(),
-      productId: "demo_item_node",
-      productName: productName,
-      quantity: 1,
-      unitPrice: totalPrice.round(),
-      totalPrice: totalPrice.round(),
-      timestamp: targetTimestamp,
-    );
-    await _saleRepo.addSale(mockSale);
+      final SaleModel sale = SaleModel(
+        id: 'mock_${timestamp.millisecondsSinceEpoch}',
+        productId: existingProduct.id ?? 'unknown',
+        productName: existingProduct.name, // ✅ Use the NAME
+        quantity: 1,
+        unitPrice: totalPrice.toInt(),
+        totalPrice: totalPrice.toInt(),
+        timestamp: timestamp,
+        notes: 'Mock sales data for testing',
+      );
+
+      await _saleRepo.addSale(sale);
+    } catch (e) {
+      debugPrint('Error adding mock sale: $e');
+    }
   }
 
   Future<bool> addSale(SaleModel sale) async {
@@ -220,6 +243,79 @@ class SaleViewModel extends ChangeNotifier {
     } finally {
       setLoading(false);
     }
+  }
+
+  // 🟢 Helper 1: Fix a single sale's product name
+  Future<void> fixSaleProductName(String saleId, String correctProductName) async {
+    try {
+      // Get all sales
+      final sales = await _saleRepo.getAllSales();
+
+      // Find the sale by ID
+      final sale = sales.firstWhere(
+            (s) => s.id == saleId,
+        orElse: () => throw Exception('Sale not found: $saleId'),
+      );
+
+      debugPrint("📝 Fixing sale: ${sale.productName} → $correctProductName");
+
+      // Create updated sale with correct product name
+      final updatedSale = SaleModel(
+        id: sale.id,
+        productId: sale.productId,
+        productName: correctProductName, // ✅ Correct name
+        quantity: sale.quantity,
+        unitPrice: sale.unitPrice,
+        totalPrice: sale.totalPrice,
+        timestamp: sale.timestamp,
+        notes: sale.notes,
+      );
+
+      // Update the sale in repository
+      await _saleRepo.updateSale(updatedSale);
+
+      // Refresh local list
+      if (_sales != null) {
+        final index = _sales!.indexWhere((s) => s.id == saleId);
+        if (index != -1) {
+          _sales![index] = updatedSale;
+          notifyListeners();
+        }
+      }
+
+      debugPrint("✅ Fixed sale: $saleId → $correctProductName");
+
+    } catch (e) {
+      debugPrint("❌ Error fixing sale product name: $e");
+      rethrow;
+    }
+  }
+
+  // 🟢 Helper 3: Check if a sale has incorrect product name
+  bool isSaleProductNameIncorrect(SaleModel sale, List<ProductModel> products) {
+    // Find the product by ID
+    final product = products.firstWhere(
+          (p) => p.id == sale.productId,
+      orElse: () => ProductModel(
+        id: sale.productId,
+        name: sale.productName,
+        price: sale.unitPrice.toDouble(),
+        stock: 0,
+        threshold: 0,
+        category: '',
+      ),
+    );
+
+    // Check if the product name looks like an ID
+    final bool isIdLike = sale.productName.length > 15 &&
+        !sale.productName.contains(' ') &&
+        (sale.productName.contains('J7s') ||
+            sale.productName.contains('Hqu') ||
+            sale.productName.contains('G6t') ||
+            sale.productName.contains('EvW') ||
+            sale.productName.startsWith('prod_'));
+
+    return isIdLike && product.name != sale.productName;
   }
 
   Future<dynamic> deleteSale(String id) async {
@@ -283,80 +379,47 @@ class SaleViewModel extends ChangeNotifier {
     required double fallbackPrice,
     required String category,
   }) async {
-    if (_sales != null) {
-      final bool isDuplicate = _sales!.any((s) =>
-      s.productName.trim().toLowerCase() == productName.trim().toLowerCase() &&
-          s.quantity == quantity &&
-          s.timestamp.year == date.year &&
-          s.timestamp.month == date.month &&
-          s.timestamp.day == date.day
-      );
-      if (isDuplicate) return;
-    }
-
-    // Fetch the latest master snapshot catalog from your repository
-    final products = await _productRepo.getAllProduct() ?? [];
-    ProductModel? targetProduct;
-
-    // Try locating an existing product in the store with a matching name
-    for (var p in products) {
-      if (p.name.trim().toLowerCase() == productName.trim().toLowerCase()) {
-        targetProduct = p;
-        break;
-      }
-    }
-
-    // If the product doesn't exist, handle database creation safely
-    if (targetProduct == null) {
-      // Generate a clean document ID prefix string
-      final String cleanId = "prod_${DateTime.now().millisecondsSinceEpoch}_${productName.replaceAll(' ', '_').toLowerCase()}";
-
-      targetProduct = ProductModel(
-        id: cleanId,
-        name: productName,
-        price: fallbackPrice,
-        stock: 100, // Give it an initial baseline stock layout
-        threshold: 10,
-        category: category,
-      );
-
-      try {
-        // 🟢 FIX: Use addProduct instead of updateProduct so Firestore builds the document!
-        await _productRepo.addProduct(targetProduct);
-        debugPrint("📦 Successfully created missing catalog item: ${targetProduct.name}");
-      } catch (e) {
-        debugPrint("⚠️ Failed to write new fallback product document: $e");
-      }
-    } else {
-      // If the product does exist, update its stock levels logically
-      try {
-        final updatedStock = (targetProduct.stock ?? 0) >= quantity ? targetProduct.stock - quantity : 0;
-        await _productRepo.updateProduct(targetProduct.copyWith(stock: updatedStock));
-      } catch (e) {
-        debugPrint("⚠️ Failed to update existing stock matrix: $e");
-      }
-    }
-
-    // Generate and append the genuine transaction ledger receipt
-    final int unitPrice = targetProduct.price.toInt();
-    final int totalPrice = unitPrice * quantity;
-
-    final newSale = SaleModel(
-      id: "sale_${DateTime.now().microsecondsSinceEpoch}_${targetProduct.id}",
-      productId: targetProduct.id ?? 'unknown',
-      productName: targetProduct.name,
-      quantity: quantity,
-      totalPrice: totalPrice,
-      unitPrice: unitPrice,
-      timestamp: date,
-      notes: "Imported via Unified Sheet Manager",
-    );
-
     try {
-      await _saleRepo.addSale(newSale);
+      // 🟢 Get all products to find matching name
+      final products = await _productRepo.getAllProduct();
+
+      // 🟢 Try to find existing product by name (case insensitive)
+      ProductModel existingProduct;
+      try {
+        existingProduct = products.firstWhere(
+              (p) => p.name.toLowerCase().trim() == productName.toLowerCase().trim(),
+        );
+      } catch (_) {
+        // Product not found - create stub with the NAME
+        existingProduct = ProductModel(
+          id: 'stub_${productName.replaceAll(' ', '_').toLowerCase()}',
+          name: productName, // ✅ Store the NAME
+          price: fallbackPrice,
+          stock: 0,
+          threshold: 5,
+          category: category,
+        );
+      }
+
+      // 🟢 ALWAYS use the product NAME for display
+      final SaleModel sale = SaleModel(
+        id: 'csv_${DateTime.now().millisecondsSinceEpoch}_${existingProduct.id?.substring(0, 5) ?? 'unknown'}',
+        productId: existingProduct.id ?? 'unknown',
+        productName: existingProduct.name, // ✅ Use the NAME
+        quantity: quantity,
+        unitPrice: fallbackPrice.toInt(),
+        totalPrice: (fallbackPrice * quantity).toInt(),
+        timestamp: date,
+        notes: 'Imported from CSV${existingProduct.id?.startsWith('stub_') == true ? ' (New Product)' : ''}',
+      );
+
+      await _saleRepo.addSale(sale);
+
+      debugPrint("✅ Added historical sale: ${existingProduct.name} x$quantity @ ₹${fallbackPrice}");
+
     } catch (e) {
-      debugPrint("💥 Fatal Sale Write Error: $e");
-      rethrow; // Pass up to the outer exception handler gracefully
+      debugPrint('❌ Error adding historical sale: $e');
+      rethrow;
     }
   }
 
@@ -529,11 +592,38 @@ class SaleViewModel extends ChangeNotifier {
     }
   }
 
+  // 🟢 FIXED: getTopProducts - Now uses product names instead of IDs
   Future<void> getTopProducts({int limit = 5}) async {
     setLoading(true);
     setError(null);
     try {
-      _topProducts = await _saleRepo.getTopProducts(limit: limit);
+      // Get all sales and products
+      final sales = await _saleRepo.getAllSales();
+      final products = await _productRepo.getAllProduct();
+
+      // Create a map of product ID to name
+      final productNameMap = <String, String>{};
+      for (var product in products) {
+        productNameMap[product.id ?? ''] = product.name;
+      }
+
+      // Count sales by product name
+      final Map<String, int> productCounts = {};
+      for (var sale in sales) {
+        // Use product name from map, or fallback to sale.productName
+        final String productName = productNameMap[sale.productId] ?? sale.productName;
+
+        // Skip "Unknown" or empty names
+        if (productName.isEmpty || productName == 'Unknown' || productName == 'NOT_FOUND') continue;
+
+        productCounts[productName] = (productCounts[productName] ?? 0) + sale.quantity;
+      }
+
+      // Sort and get top products
+      final sorted = productCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+      _topProducts = Map.fromEntries(sorted.take(limit));
       notifyListeners();
     } on Exception catch (e) {
       setError(e.toString());
@@ -542,11 +632,38 @@ class SaleViewModel extends ChangeNotifier {
     }
   }
 
+  // 🟢 FIXED: getBottomProducts - Now uses product names instead of IDs
   Future<void> getBottomProducts({int limit = 5}) async {
     setLoading(true);
     setError(null);
     try {
-      _bottomProducts = await _saleRepo.getBottomProducts(limit: limit);
+      // Get all sales and products
+      final sales = await _saleRepo.getAllSales();
+      final products = await _productRepo.getAllProduct();
+
+      // Create a map of product ID to name
+      final productNameMap = <String, String>{};
+      for (var product in products) {
+        productNameMap[product.id ?? ''] = product.name;
+      }
+
+      // Count sales by product name
+      final Map<String, int> productCounts = {};
+      for (var sale in sales) {
+        // Use product name from map, or fallback to sale.productName
+        final String productName = productNameMap[sale.productId] ?? sale.productName;
+
+        // Skip "Unknown" or empty names
+        if (productName.isEmpty || productName == 'Unknown' || productName == 'NOT_FOUND') continue;
+
+        productCounts[productName] = (productCounts[productName] ?? 0) + sale.quantity;
+      }
+
+      // Sort and get bottom products (lowest quantity first)
+      final sorted = productCounts.entries.toList()
+        ..sort((a, b) => a.value.compareTo(b.value));
+
+      _bottomProducts = Map.fromEntries(sorted.take(limit));
       notifyListeners();
     } on Exception catch (e) {
       setError(e.toString());
@@ -565,8 +682,8 @@ class SaleViewModel extends ChangeNotifier {
         _saleRepo.getTodaySales().then((val) => _todaySales = val),
         _saleRepo.getWeeklySales().then((val) => _weeklySales = val),
         _saleRepo.getMonthlySales().then((val) => _monthlySales = val),
-        _saleRepo.getTopProducts().then((val) => _topProducts = val),
-        _saleRepo.getBottomProducts().then((val) => _bottomProducts = val),
+        getTopProducts(),
+        getBottomProducts(),
         _saleRepo.getAllSales().then((val) => _sales = val),
       ]);
       notifyListeners();

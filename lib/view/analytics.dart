@@ -1,3 +1,4 @@
+// File: lib/view/analytics.dart
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../utils/colors.dart';
 import '../viewmodel/sale_viewmodel.dart';
 import '../viewmodel/product_viewmodel.dart';
+import '../viewmodel/analytics_viewmodel.dart';
 import '../model/sale_model.dart';
 import '../model/product_model.dart';
 import '../services/export_service.dart';
@@ -25,19 +27,31 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SaleViewModel>().getAllSales();
-      context.read<ProductViewModel>().getAllProduct();
+      _loadData();
     });
+  }
+
+  Future<void> _loadData() async {
+    final saleVm = context.read<SaleViewModel>();
+    final productVm = context.read<ProductViewModel>();
+    final analyticsVm = context.read<AnalyticsViewModel>();
+
+    await Future.wait([
+      saleVm.getAllSales(),
+      productVm.getAllProduct(),
+      analyticsVm.loadAllData(),
+    ]);
   }
 
   @override
   Widget build(BuildContext context) {
     final saleVm = context.watch<SaleViewModel>();
     final productVm = context.watch<ProductViewModel>();
+    final analyticsVm = context.watch<AnalyticsViewModel>();
 
     final sales = saleVm.sales ?? [];
     final products = productVm.allProducts ?? [];
-    final isLoading = saleVm.loading || productVm.loading;
+    final isLoading = saleVm.loading || productVm.loading || analyticsVm.loading;
 
     // Calculate analytics timelines
     final now = DateTime.now();
@@ -76,66 +90,66 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       percentChange = ((totalSales - previousTotal) / previousTotal * 100).round();
     }
 
-    // Calculate chart coordinate ticks
+    // 🟢 FIXED: Use AnalyticsViewModel for chart data
     List<DailySales> salesData = [];
     if (selectedPeriod == "This Week") {
-      for (int i = 0; i < 7; i++) {
-        final day = startDate.add(Duration(days: i));
-        final dayStart = DateTime(day.year, day.month, day.day);
-        final dayEnd = dayStart.add(const Duration(days: 1));
-        final daySales = sales
-            .where((s) => s.timestamp.isAfter(dayStart) && s.timestamp.isBefore(dayEnd))
-            .fold(0, (sum, s) => sum + s.totalPrice);
-        salesData.add(DailySales(_getDayName(i), daySales));
-      }
+      final weeklyData = analyticsVm.getWeeklySalesData();
+      salesData = weeklyData.map((d) => DailySales(d.day, d.amount)).toList();
     } else if (selectedPeriod == "This Month") {
-      final weeks = ((daysInPeriod + 6) / 7).ceil();
-      for (int week = 0; week < weeks; week++) {
-        final weekStart = startDate.add(Duration(days: week * 7));
-        final weekEnd = weekStart.add(const Duration(days: 7));
-        final weekSales = sales
-            .where((s) => s.timestamp.isAfter(weekStart) && s.timestamp.isBefore(weekEnd))
-            .fold(0, (sum, s) => sum + s.totalPrice);
-        salesData.add(DailySales("Wk ${week + 1}", weekSales));
+      final monthlyData = analyticsVm.getMonthlySalesData();
+      // Take every 7th day for weekly view
+      salesData = [];
+      for (int i = 0; i < monthlyData.length; i += 7) {
+        int weekTotal = 0;
+        for (int j = i; j < i + 7 && j < monthlyData.length; j++) {
+          weekTotal += monthlyData[j].amount;
+        }
+        salesData.add(DailySales('Wk ${(i ~/ 7) + 1}', weekTotal));
       }
     } else {
-      for (int month = 0; month < 12; month++) {
-        final monthStart = DateTime(startDate.year, month + 1, 1);
-        final monthEnd = DateTime(startDate.year, month + 2, 1);
-        final monthSales = sales
-            .where((s) => s.timestamp.isAfter(monthStart) && s.timestamp.isBefore(monthEnd))
-            .fold(0, (sum, s) => sum + s.totalPrice);
-        salesData.add(DailySales(_getMonthName(month), monthSales));
+      final yearlyData = analyticsVm.getYearlySalesData();
+      salesData = yearlyData.map((d) => DailySales(d.day, d.amount)).toList();
+    }
+
+    // 🟢 FIXED: Calculate product sales using product names instead of IDs
+    Map<String, int> productSalesMap = {};
+    Map<String, String> productNameMap = {};
+
+    for (var product in products) {
+      productNameMap[product.id ?? ''] = product.name;
+    }
+
+    for (var sale in sales.where((s) => s.timestamp.isAfter(startDate))) {
+      final String productName = productNameMap[sale.productId] ?? sale.productName;
+      if (productName.isNotEmpty && productName != 'Unknown') {
+        productSalesMap[productName] = (productSalesMap[productName] ?? 0) + sale.quantity;
       }
     }
 
-    // Top and bottom product sorting arrays
-    Map<String, int> productSalesMap = {};
-    for (var sale in sales.where((s) => s.timestamp.isAfter(startDate))) {
-      productSalesMap[sale.productId] = (productSalesMap[sale.productId] ?? 0) + sale.quantity;
-    }
-
+    // Sort products by sales
     var sortedProducts = productSalesMap.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
+    // 🟢 FIXED: Top products with names
     final topProducts = <TopProductData>[];
     for (int i = 0; i < sortedProducts.length && i < 5; i++) {
-      final product = products.firstWhere(
-            (p) => p.id == sortedProducts[i].key,
-        orElse: () => ProductModel(id: '', name: 'Unknown', price: 0, stock: 0, threshold: 0, category: 'Unknown'),
-      );
-      topProducts.add(TopProductData(name: product.name, quantity: sortedProducts[i].value, rank: i + 1));
+      topProducts.add(TopProductData(
+        name: sortedProducts[i].key,
+        quantity: sortedProducts[i].value,
+        rank: i + 1,
+      ));
     }
 
+    // 🟢 FIXED: Bottom products with names
     var bottomSorted = sortedProducts.toList()..sort((a, b) => a.value.compareTo(b.value));
     final bottomProducts = <TopProductData>[];
     for (int i = 0; i < bottomSorted.length && i < 5; i++) {
-      final product = products.firstWhere(
-            (p) => p.id == bottomSorted[i].key,
-        orElse: () => ProductModel(id: '', name: 'Unknown', price: 0, stock: 0, threshold: 0, category: 'Unknown'),
-      );
-      if (product.name != 'Unknown') {
-        bottomProducts.add(TopProductData(name: product.name, quantity: bottomSorted[i].value, rank: i + 1));
+      if (bottomSorted[i].value > 0) {
+        bottomProducts.add(TopProductData(
+          name: bottomSorted[i].key,
+          quantity: bottomSorted[i].value,
+          rank: i + 1,
+        ));
       }
     }
 
@@ -183,10 +197,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       body: isLoading
           ? const Center(child: CircularProgressIndicator(color: AppColor.primary))
           : RefreshIndicator(
-        onRefresh: () async {
-          await saleVm.getAllSales();
-          await productVm.getAllProduct();
-        },
+        onRefresh: _loadData,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           child: Column(
@@ -253,8 +264,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           BarChartData(
                             alignment: BarChartAlignment.spaceAround,
                             maxY: salesData.map((e) => e.amount.toDouble()).reduce((a, b) => a > b ? a : b) * 1.2,
-
-                            // 🟢 FIXED: High contrast bar click tooltip configuration
                             barTouchData: BarTouchData(
                               touchTooltipData: BarTouchTooltipData(
                                 getTooltipColor: (group) => AppColor.neutral,
@@ -343,7 +352,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       children: [
                         const Icon(Icons.psychology, color: AppColor.primary, size: 22),
                         const SizedBox(width: 8),
-                        // 🟢 FIXED: Wrapped title with Expanded to handle thin screens safely
                         Expanded(
                           child: Text(
                             "AI Demand Trends & Projections",
@@ -363,7 +371,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       height: 160,
                       child: LineChart(
                         LineChartData(
-                          // 🟢 FIXED: High contrast line chart node tap color configurations
                           lineTouchData: LineTouchData(
                             touchTooltipData: LineTouchTooltipData(
                               getTooltipColor: (spot) => AppColor.neutral,
@@ -454,7 +461,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       children: [
                         const Icon(Icons.auto_awesome, color: AppColor.success, size: 20),
                         const SizedBox(width: 8),
-                        // 🟢 FIXED: Wrapped long section header text with Expanded to stop the 20-pixel right overflow issue
                         Expanded(
                           child: Text(
                             "Algorithmic Safety Threshold Adjustments",
@@ -479,11 +485,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       separatorBuilder: (context, index) => const Divider(height: 16),
                       itemBuilder: (context, index) {
                         final product = products[index];
-                        final qtySold = productSalesMap[product.id] ?? 0;
+                        final qtySold = productSalesMap[product.name] ?? 0;
 
                         // Algorithmic safety threshold calculation logic
-                        double dailyVelocity = qtySold / daysInPeriod;
+                        double dailyVelocity = daysInPeriod > 0 ? qtySold / daysInPeriod : 0;
                         int recommendedThreshold = (dailyVelocity * 3 + 4).ceil();
+                        if (recommendedThreshold < 2) recommendedThreshold = 2;
 
                         bool requiresUpdate = recommendedThreshold != product.threshold;
 
@@ -683,8 +690,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     }
 
     try {
-      // 🟢 FIXED: Explicitly stringified data values before passing them forward.
-      // This enforces a robust List<Map<String, String>> contract, bypassing runtime pipeline type mismatch bugs.
       List<Map<String, String>> csvData = sales.map((sale) {
         return {
           'Date': _formatDateForExport(sale.timestamp),

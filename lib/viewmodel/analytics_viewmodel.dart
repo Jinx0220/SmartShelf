@@ -1,3 +1,4 @@
+// File: lib/viewmodel/analytics_viewmodel.dart
 import 'package:flutter/material.dart';
 import '../model/sale_model.dart';
 import '../model/product_model.dart';
@@ -105,14 +106,56 @@ class AnalyticsViewModel extends ChangeNotifier {
     _totalSales = allSales.fold(0, (sum, sale) => sum + sale.totalPrice);
   }
 
-  // Calculate top products
+  // 🟢 FIXED: Calculate top products using product names
   Future<void> _calculateTopProducts() async {
-    _topProducts = await _saleRepo.getTopProducts(limit: 5);
+    final sales = await _saleRepo.getAllSales();
+    final products = await _productRepo.getAllProduct();
+
+    // Create a map of product ID to name
+    final productNameMap = <String, String>{};
+    for (var product in products) {
+      productNameMap[product.id ?? ''] = product.name;
+    }
+
+    // Count sales by product name
+    final Map<String, int> productCounts = {};
+    for (var sale in sales) {
+      final String productName = productNameMap[sale.productId] ?? sale.productName;
+      if (productName.isEmpty || productName == 'Unknown' || productName == 'NOT_FOUND') continue;
+      productCounts[productName] = (productCounts[productName] ?? 0) + sale.quantity;
+    }
+
+    // Sort and get top products
+    final sorted = productCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    _topProducts = Map.fromEntries(sorted.take(5));
   }
 
-  // Calculate bottom products
+  // 🟢 FIXED: Calculate bottom products using product names
   Future<void> _calculateBottomProducts() async {
-    _bottomProducts = await _saleRepo.getBottomProducts(limit: 5);
+    final sales = await _saleRepo.getAllSales();
+    final products = await _productRepo.getAllProduct();
+
+    // Create a map of product ID to name
+    final productNameMap = <String, String>{};
+    for (var product in products) {
+      productNameMap[product.id ?? ''] = product.name;
+    }
+
+    // Count sales by product name
+    final Map<String, int> productCounts = {};
+    for (var sale in sales) {
+      final String productName = productNameMap[sale.productId] ?? sale.productName;
+      if (productName.isEmpty || productName == 'Unknown' || productName == 'NOT_FOUND') continue;
+      productCounts[productName] = (productCounts[productName] ?? 0) + sale.quantity;
+    }
+
+    // Sort and get bottom products (lowest quantity first)
+    final sorted = productCounts.entries.toList()
+      ..sort((a, b) => a.value.compareTo(b.value));
+
+    _bottomProducts = Map.fromEntries(sorted.take(5));
   }
 
   // Calculate sales history (grouped by day/week/month)
@@ -129,13 +172,42 @@ class AnalyticsViewModel extends ChangeNotifier {
     _salesHistory = history;
   }
 
-  // Get weekly sales data for chart
+  // 🟢 FIXED: Get weekly sales data for chart (last 6 weeks)
   List<DailySalesData> getWeeklySalesData() {
+    final sales = _sales ?? [];
+    final now = DateTime.now();
+
+    // Get the start of the current week (Monday)
+    final currentWeekStart = now.subtract(Duration(days: now.weekday - 1));
+
+    List<DailySalesData> weeklyData = [];
+
+    // Get last 6 weeks
+    for (int weekOffset = 5; weekOffset >= 0; weekOffset--) {
+      final weekStart = currentWeekStart.subtract(Duration(days: weekOffset * 7));
+      final weekEnd = weekStart.add(const Duration(days: 7));
+
+      // Calculate total sales for this week
+      final weekSales = sales
+          .where((s) =>
+      s.timestamp.isAfter(weekStart) &&
+          s.timestamp.isBefore(weekEnd))
+          .fold(0, (sum, s) => sum + s.totalPrice);
+
+      final weekLabel = 'Wk ${6 - weekOffset}';
+      weeklyData.add(DailySalesData(day: weekLabel, amount: weekSales));
+    }
+
+    return weeklyData;
+  }
+
+  // 🟢 FIXED: Get daily sales for the last 7 days
+  List<DailySalesData> getDailySalesData() {
     final sales = _sales ?? [];
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    List<DailySalesData> weeklyData = [];
+    List<DailySalesData> dailyData = [];
 
     for (int i = 6; i >= 0; i--) {
       final date = today.subtract(Duration(days: i));
@@ -147,17 +219,17 @@ class AnalyticsViewModel extends ChangeNotifier {
           .fold(0, (sum, s) => sum + s.totalPrice);
 
       final dayName = _getDayName(date.weekday);
-      weeklyData.add(DailySalesData(day: dayName, amount: daySales));
+      dailyData.add(DailySalesData(day: dayName, amount: daySales));
     }
 
-    return weeklyData;
+    return dailyData;
   }
 
   // Get monthly sales data for chart
   List<DailySalesData> getMonthlySalesData() {
     final sales = _sales ?? [];
     final now = DateTime.now();
-        final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
 
     List<DailySalesData> monthlyData = [];
 
@@ -235,56 +307,43 @@ class AnalyticsViewModel extends ChangeNotifier {
     return ((current - previous) / previous * 100);
   }
 
-  // Get top products as list with names
+  // 🟢 FIXED: Get top products as list with names
   List<TopProductData> getTopProductsList() {
     final map = _topProducts ?? {};
-    final productMap = _products?.fold<Map<String, String>>(
-      {},
-          (map, product) {
-        map[product.id ?? ''] = product.name ?? 'Unknown';
-        return map;
-      },
-    ) ?? {};
 
-    return map.entries.map((entry) {
-      return TopProductData(
-        name: productMap[entry.key] ?? 'Unknown',
+    // Create a map from the already calculated top products
+    final List<TopProductData> result = [];
+    int rank = 1;
+
+    for (var entry in map.entries) {
+      result.add(TopProductData(
+        name: entry.key, // ✅ The key is now the product name
         quantity: entry.value,
-        rank: 0,
-      );
-    }).toList().asMap().entries.map((entry) {
-      return TopProductData(
-        name: entry.value.name,
-        quantity: entry.value.quantity,
-        rank: entry.key + 1,
-      );
-    }).toList();
+        rank: rank,
+      ));
+      rank++;
+    }
+
+    return result;
   }
 
-  // Get bottom products as list with names
+  // 🟢 FIXED: Get bottom products as list with names
   List<TopProductData> getBottomProductsList() {
     final map = _bottomProducts ?? {};
-    final productMap = _products?.fold<Map<String, String>>(
-      {},
-          (map, product) {
-        map[product.id ?? ''] = product.name ?? 'Unknown';
-        return map;
-      },
-    ) ?? {};
 
-    return map.entries.map((entry) {
-      return TopProductData(
-        name: productMap[entry.key] ?? 'Unknown',
+    final List<TopProductData> result = [];
+    int rank = 1;
+
+    for (var entry in map.entries) {
+      result.add(TopProductData(
+        name: entry.key, // ✅ The key is now the product name
         quantity: entry.value,
-        rank: 0,
-      );
-    }).toList().asMap().entries.map((entry) {
-      return TopProductData(
-        name: entry.value.name,
-        quantity: entry.value.quantity,
-        rank: entry.key + 1,
-      );
-    }).toList();
+        rank: rank,
+      ));
+      rank++;
+    }
+
+    return result;
   }
 
   String _getDayName(int index) {

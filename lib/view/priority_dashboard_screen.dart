@@ -41,6 +41,83 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     });
   }
 
+  // 🟢 ENHANCED FIX: Method to fix existing data - checks ALL sales
+  Future<void> _fixExistingSalesData() async {
+    try {
+      final saleVm = context.read<SaleViewModel>();
+      final productVm = context.read<ProductViewModel>();
+
+      await productVm.getAllProduct();
+      await saleVm.getAllSales();
+
+      final sales = saleVm.sales ?? [];
+      final products = productVm.allProducts ?? [];
+
+      if (sales.isEmpty || products.isEmpty) {
+        debugPrint("📝 No data to fix");
+        return;
+      }
+
+      debugPrint("📝 Checking ${sales.length} sales records for fixes...");
+      int fixedCount = 0;
+      int checkedCount = 0;
+
+      // Build a map of product ID to name for quick lookup
+      final productNameMap = <String, String>{};
+      for (var product in products) {
+        productNameMap[product.id ?? ''] = product.name;
+      }
+
+      for (var sale in sales) {
+        checkedCount++;
+
+        // Get the correct product name from the map
+        final String correctName = productNameMap[sale.productId] ?? sale.productName;
+
+        // Check if the sale's productName is different from the correct name
+        if (sale.productName != correctName && correctName.isNotEmpty) {
+          debugPrint("📝 Fixing sale #$checkedCount: '${sale.productName}' → '$correctName'");
+
+          // Use the SaleViewModel helper to fix this sale
+          await saleVm.fixSaleProductName(sale.id, correctName);
+          fixedCount++;
+        } else {
+          debugPrint("✅ Sale #$checkedCount already correct: '${sale.productName}'");
+        }
+      }
+
+      debugPrint("📝 ===== SUMMARY =====");
+      debugPrint("Total sales checked: $checkedCount");
+      debugPrint("Fixed sales: $fixedCount");
+
+      // Refresh all ViewModels
+      if (mounted) {
+        await _refreshAllViewModels();
+        if (fixedCount > 0) {
+          Fluttertoast.showToast(
+            msg: "Fixed $fixedCount sales records!",
+            backgroundColor: AppColor.success,
+            textColor: Colors.white,
+          );
+        } else {
+          Fluttertoast.showToast(
+            msg: "✅ All sales already have correct names!",
+            backgroundColor: AppColor.primary,
+            textColor: Colors.white,
+          );
+        }
+      }
+
+    } catch (e) {
+      debugPrint("❌ Error fixing sales data: $e");
+      Fluttertoast.showToast(
+        msg: "Error fixing data: $e",
+        backgroundColor: AppColor.error,
+        textColor: Colors.white,
+      );
+    }
+  }
+
   Future<void> _refreshDashboardData() async {
     if (!mounted) return;
     final productVm = context.read<ProductViewModel>();
@@ -55,6 +132,10 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
         authVm.loadCurrentUser(),
         dashboardVm.loadDashboardData(),
       ]);
+
+      // 🟢 Run fix once after data loads
+      await _fixExistingSalesData();
+
     } catch (e) {
       debugPrint("Error loading dashboard metrics: $e");
     }
@@ -71,7 +152,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     }
   }
 
-  // 🟢 NEW METHOD: Refresh all ViewModels after CSV import
+  // 🟢 Refresh all ViewModels after CSV import
   Future<void> _refreshAllViewModels() async {
     final productVm = context.read<ProductViewModel>();
     final saleVm = context.read<SaleViewModel>();
@@ -191,7 +272,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
         textColor: Colors.white,
       );
 
-      // 🟢 CALL THE NEW REFRESH METHOD
+      // 🟢 CALL THE REFRESH METHOD
       if (context.mounted) {
         await _refreshAllViewModels();
       }
@@ -212,19 +293,26 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
       ProductViewModel productVm,
       ) async {
     try {
-      final ProductModel target = totalCatalog.firstWhere(
-            (element) => element.name.trim().toLowerCase() == productName.trim().toLowerCase(),
-        orElse: () => ProductModel(
+      // 🟢 Find product by name (case-insensitive)
+      ProductModel target;
+      try {
+        target = totalCatalog.firstWhere(
+              (element) => element.name.trim().toLowerCase() == productName.trim().toLowerCase(),
+        );
+      } catch (_) {
+        // 🟢 Product not found - create a proper stub with the NAME
+        target = ProductModel(
           id: 'stub_${productName.replaceAll(' ', '_').toLowerCase()}',
           name: productName,
           price: 150.0,
           stock: 10,
           threshold: 2,
           category: 'Fast-Moving',
-        ),
-      );
+        );
+      }
 
-      if (target.stock <= 0 && target.id != null && !target.id!.startsWith('stub_')) {
+      // Check stock for real products only
+      if (!target.id!.startsWith('stub_') && target.stock <= 0) {
         Fluttertoast.showToast(
           msg: "Cannot log sale: $productName is completely out of stock!",
           backgroundColor: AppColor.error,
@@ -234,6 +322,8 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
       }
 
       final int productUnitPrice = target.price.toInt();
+
+      // 🟢 CRITICAL FIX: Always use the product NAME, not the ID
       final SaleModel instantSaleRecord = SaleModel(
         id: "quick_${DateTime.now().microsecondsSinceEpoch}",
         productId: target.id ?? 'unknown',
@@ -245,27 +335,37 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
         notes: "Logged via Quick-Add Shortcut Panel",
       );
 
+      debugPrint("📝 Quick Sale: Product Name: ${instantSaleRecord.productName}, ID: ${instantSaleRecord.productId}");
+
       final bool status = await saleVm.addSale(instantSaleRecord);
 
-      if (status && target.id != null && !target.id!.startsWith('stub_')) {
+      if (status && !target.id!.startsWith('stub_')) {
         await productVm.updateProduct(target.copyWith(stock: target.stock - 1));
         if (context.mounted) {
           await context.read<DashboardViewModel>().loadDashboardData();
+          await _refreshAllViewModels();
         }
+      }
+
+      if (status) {
         Fluttertoast.showToast(
-          msg: "⚡ Quick Added: 1x $productName!",
+          msg: "⚡ Quick Added: 1x ${target.name}!",
           backgroundColor: AppColor.success,
           textColor: Colors.white,
         );
       }
     } catch (e) {
       debugPrint("Quick sale error: $e");
+      Fluttertoast.showToast(
+        msg: "Error: ${e.toString()}",
+        backgroundColor: AppColor.error,
+        textColor: Colors.white,
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // 🟢 Watch the dashboard pipeline changes live
     final dashboardVm = context.watch<DashboardViewModel>();
     final productVm = context.watch<ProductViewModel>();
     final saleVm = context.watch<SaleViewModel>();
@@ -275,7 +375,6 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
     final sales = saleVm.sales ?? [];
     final user = authVm.user;
 
-    // 🟢 Pull metrics straight out of your calculated dashboard data
     final int todaySalesAmount = dashboardVm.todaySales;
     final int weeklySalesAmount = dashboardVm.weeklySales;
     final int lowStockCount = dashboardVm.lowStockCount;
@@ -345,8 +444,7 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
                   _buildGamificationCard(saleVm),
                   const SizedBox(height: 16),
 
-                  _buildQuickAddShortcutShelf(context, saleVm.topProducts, products, saleVm, productVm),
-                  const SizedBox(height: 16),
+                  // 🟢 QUICK-ADD ROW REMOVED
 
                   if (misalignedThresholds > 0)
                     _buildAiInsightBanner(misalignedThresholds),
@@ -549,72 +647,6 @@ class _PriorityDashboardScreenState extends State<PriorityDashboardScreen> {
           Text(title, style: GoogleFonts.manrope(fontSize: 11, color: AppColor.secondary, letterSpacing: 0.5)),
           const SizedBox(height: 8),
           Text(value, style: GoogleFonts.spaceGrotesk(fontSize: 15, fontWeight: FontWeight.bold, color: AppColor.neutral)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickAddShortcutShelf(
-      BuildContext context,
-      Map<String, int>? topFrequentData,
-      List<ProductModel> catalog,
-      SaleViewModel saleVm,
-      ProductViewModel productVm,
-      ) {
-    final List<String> shortListItems = (topFrequentData != null && topFrequentData.isNotEmpty)
-        ? topFrequentData.keys.take(8).toList()
-        : ['Milk', 'Bread', 'Eggs', 'Sugar', 'Rice'];
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
-            child: Text(
-              "Frequent Sales Quick-Add (1-Tap)",
-              style: GoogleFonts.spaceGrotesk(fontSize: 13, fontWeight: FontWeight.bold, color: AppColor.neutral, letterSpacing: 0.3),
-            ),
-          ),
-          SizedBox(
-            height: 44,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemCount: shortListItems.length,
-              itemBuilder: (context, idx) {
-                final String itemName = shortListItems[idx];
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: InkWell(
-                    onTap: () => _executeInstantQuickSale(itemName, catalog, saleVm, productVm),
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColor.primary.withValues(alpha: 0.2)),
-                        boxShadow: [BoxShadow(color: Colors.grey.shade100, blurRadius: 4, offset: const Offset(0, 1))],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.add_circle_outline, size: 16, color: AppColor.primary),
-                          const SizedBox(width: 6),
-                          Text(
-                            itemName,
-                            style: GoogleFonts.manrope(fontSize: 13, fontWeight: FontWeight.w600, color: AppColor.neutral),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
         ],
       ),
     );

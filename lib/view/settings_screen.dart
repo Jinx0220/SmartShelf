@@ -15,9 +15,12 @@ import '../viewmodel/auth_viewmodel.dart';
 import '../viewmodel/settings_viewmodel.dart';
 import '../viewmodel/product_viewmodel.dart';
 import '../viewmodel/sale_viewmodel.dart';
-import '../viewmodel/dashboard_viewmodel.dart'; // 🟢 ADD THIS IMPORT
+import '../viewmodel/dashboard_viewmodel.dart';
 import '../model/user_model.dart';
 import 'login_screen.dart';
+
+// 🟢 ADD THIS IMPORT
+import 'priority_dashboard_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -77,7 +80,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final TextEditingController deleteController = TextEditingController();
     final navigator = Navigator.of(context);
     final authVm = context.read<AuthViewModel>();
-    final dashboardVm = context.read<DashboardViewModel>(); // 🟢 ADD THIS
+    final dashboardVm = context.read<DashboardViewModel>();
 
     bool? confirm = await showDialog<bool>(
       context: context,
@@ -126,7 +129,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       bool success = await authVm.deleteAccountPermanently();
 
       if (success) {
-        // 🟢 ADD THIS: Reset dashboard before navigating
         await dashboardVm.loadDashboardData();
 
         navigator.pushAndRemoveUntil(
@@ -243,7 +245,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           final navigator = Navigator.of(context);
           final productVm = context.read<ProductViewModel>();
           final saleVm = context.read<SaleViewModel>();
-          final dashboardVm = context.read<DashboardViewModel>(); // 🟢 ADD THIS
+          final dashboardVm = context.read<DashboardViewModel>();
 
           navigator.pop();
           Fluttertoast.showToast(msg: "Verifying backup file integrity...");
@@ -263,7 +265,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             await productVm.restoreProductsFromJson(decodedData['products'] as List<dynamic>);
             await saleVm.restoreSalesFromJson(decodedData['sales'] as List<dynamic>);
 
-            // 🟢 ADD THIS: Refresh dashboard after restore
             await dashboardVm.loadDashboardData();
 
             Fluttertoast.showToast(
@@ -290,7 +291,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       final saleVm = context.read<SaleViewModel>();
-      final dashboardVm = context.read<DashboardViewModel>(); // 🟢 ADD THIS
+      final dashboardVm = context.read<DashboardViewModel>();
 
       await saleVm.clearAllSalesBatch();
 
@@ -305,7 +306,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       }
 
-      // 🟢 ADD THIS: Refresh dashboard after mock data injection
       await dashboardVm.loadDashboardData();
 
       Fluttertoast.showToast(
@@ -316,6 +316,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
       Fluttertoast.showToast(msg: "Failed to generate sample data.");
     } finally {
       if (mounted) setState(() => _isInjectingMock = false);
+    }
+  }
+
+  // 🟢 ADD THIS METHOD: Fix product names in sales
+  Future<void> _fixProductNamesInSales() async {
+    try {
+      // Show loading indicator
+      Fluttertoast.showToast(
+        msg: "Checking sales records...",
+        backgroundColor: AppColor.primary,
+        textColor: Colors.white,
+      );
+
+      final productVm = context.read<ProductViewModel>();
+      final saleVm = context.read<SaleViewModel>();
+      final dashboardVm = context.read<DashboardViewModel>();
+
+      // Get fresh data
+      await productVm.getAllProduct();
+      await saleVm.getAllSales();
+
+      final sales = saleVm.sales ?? [];
+      final products = productVm.allProducts ?? [];
+
+      if (sales.isEmpty || products.isEmpty) {
+        Fluttertoast.showToast(
+          msg: "No data to fix. Add products and sales first.",
+          backgroundColor: AppColor.warning,
+          textColor: Colors.white,
+        );
+        return;
+      }
+
+      debugPrint("📝 Checking ${sales.length} sales records for fixes...");
+      int fixedCount = 0;
+      int checkedCount = 0;
+
+      // Build a map of product ID to name for quick lookup
+      final productNameMap = <String, String>{};
+      for (var product in products) {
+        productNameMap[product.id ?? ''] = product.name;
+      }
+
+      for (var sale in sales) {
+        checkedCount++;
+
+        // Get the correct product name from the map
+        final String correctName = productNameMap[sale.productId] ?? sale.productName;
+
+        // Check if the sale's productName is different from the correct name
+        if (sale.productName != correctName && correctName.isNotEmpty) {
+          debugPrint("📝 Fixing sale #$checkedCount: '${sale.productName}' → '$correctName'");
+
+          // Use the SaleViewModel helper to fix this sale
+          await saleVm.fixSaleProductName(sale.id, correctName);
+          fixedCount++;
+        }
+      }
+
+      debugPrint("📝 ===== SUMMARY =====");
+      debugPrint("Total sales checked: $checkedCount");
+      debugPrint("Fixed sales: $fixedCount");
+
+      // Refresh dashboard
+      await dashboardVm.loadDashboardData();
+
+      if (fixedCount > 0) {
+        Fluttertoast.showToast(
+          msg: "✅ Fixed $fixedCount sales records!",
+          backgroundColor: AppColor.success,
+          textColor: Colors.white,
+        );
+      } else {
+        Fluttertoast.showToast(
+          msg: "✅ All sales already have correct names!",
+          backgroundColor: AppColor.primary,
+          textColor: Colors.white,
+        );
+      }
+    } catch (e) {
+      debugPrint("❌ Error fixing sales data: $e");
+      Fluttertoast.showToast(
+        msg: "Error fixing data: $e",
+        backgroundColor: AppColor.error,
+        textColor: Colors.white,
+      );
     }
   }
 
@@ -454,6 +540,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: _isInjectingMock ? null : _injectMockSalesData,
           ),
 
+          // 🟢 NEW: Fix Product Names in Sales Button
+          const Divider(),
+          _buildSectionHeader('Data Maintenance'),
+          ListTile(
+            leading: Icon(Icons.build, color: AppColor.primary),
+            title: Text(
+              'Fix Product Names in Sales',
+              style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w500, color: primaryTextColor),
+            ),
+            subtitle: Text(
+              'Update sales records with correct product names',
+              style: GoogleFonts.manrope(fontSize: 12, color: secondaryTextColor),
+            ),
+            trailing: Icon(Icons.chevron_right, color: secondaryTextColor),
+            onTap: _fixProductNamesInSales,
+          ),
+
           const Divider(),
           _buildSectionHeader('Localization Configuration'),
           _buildDropdownTile(
@@ -585,12 +688,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // 🟢 FIXED: Now properly refreshes dashboard after deletion
   void _showDeleteConfirmation(BuildContext context) {
     final navigator = Navigator.of(context);
     final productVm = context.read<ProductViewModel>();
     final saleVm = context.read<SaleViewModel>();
-    final dashboardVm = context.read<DashboardViewModel>(); // 🟢 ADD THIS
+    final dashboardVm = context.read<DashboardViewModel>();
 
     showDialog(
       context: context,
@@ -642,13 +744,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // 🟢 FIXED: Now properly clears data before logout
   void _showLogoutConfirmation(BuildContext context) {
     final navigator = Navigator.of(context);
     final authVm = context.read<AuthViewModel>();
     final productVm = context.read<ProductViewModel>();
     final saleVm = context.read<SaleViewModel>();
-    final dashboardVm = context.read<DashboardViewModel>(); // 🟢 ADD THIS
+    final dashboardVm = context.read<DashboardViewModel>();
 
     showDialog(
       context: context,

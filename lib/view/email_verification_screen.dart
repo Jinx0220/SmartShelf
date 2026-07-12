@@ -1,3 +1,4 @@
+// File: lib/view/email_verification_screen.dart
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -23,51 +24,117 @@ class EmailVerificationScreen extends StatefulWidget {
 class _EmailVerificationScreenState
     extends State<EmailVerificationScreen> {
   bool checking = false;
+  bool _isResending = false;
+  String? _errorMessage;
 
   Future<void> checkVerification() async {
     setState(() {
       checking = true;
+      _errorMessage = null;
     });
 
     final vm = context.read<AuthViewModel>();
 
-    final verified = await vm.checkEmailVerified();
+    try {
+      // 🟢 FIX: Check email verification status
+      final verified = await vm.checkEmailVerified();
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      checking = false;
-    });
+      setState(() {
+        checking = false;
+      });
 
-    if (verified) {
-      Fluttertoast.showToast(
-        msg: "Email verified successfully!",
-      );
+      if (verified) {
+        Fluttertoast.showToast(
+          msg: "✅ Email verified successfully!",
+          backgroundColor: AppColor.success,
+          textColor: Colors.white,
+        );
 
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const LoginScreen(),
-        ),
-            (route) => false,
-      );
-    } else {
-      Fluttertoast.showToast(
-        msg: "Your email has not been verified yet.",
-      );
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const LoginScreen(),
+          ),
+              (route) => false,
+        );
+      } else {
+        // 🟢 Show more helpful message
+        setState(() {
+          _errorMessage = "⚠️ Your email has not been verified yet. Please check your inbox and click the verification link. If you don't see it, check your spam folder.";
+        });
+
+        Fluttertoast.showToast(
+          msg: "Email not verified yet. Please check your inbox.",
+          backgroundColor: AppColor.warning,
+          textColor: Colors.white,
+          toastLength: Toast.LENGTH_LONG,
+        );
+      }
+    } catch (e) {
+      setState(() {
+        checking = false;
+        _errorMessage = "Error checking verification: ${e.toString()}";
+      });
     }
   }
 
   Future<void> resendEmail() async {
+    if (_isResending) return;
+
+    setState(() {
+      _isResending = true;
+      _errorMessage = null;
+    });
+
     final vm = context.read<AuthViewModel>();
 
-    await vm.resendVerificationEmail();
+    try {
+      await vm.resendVerificationEmail();
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    Fluttertoast.showToast(
-      msg: "Verification email sent successfully.",
-    );
+      Fluttertoast.showToast(
+        msg: "📧 Verification email sent successfully! Please check your inbox.",
+        backgroundColor: AppColor.success,
+        textColor: Colors.white,
+        toastLength: Toast.LENGTH_LONG,
+      );
+
+      // 🟢 Show a helpful message
+      setState(() {
+        _errorMessage = "✅ A new verification link has been sent to ${widget.email}. Please check your inbox (and spam folder).";
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      String errorMsg = e.toString().replaceFirst("Exception: ", "");
+
+      // 🟢 Check for rate limit
+      if (errorMsg.contains("too-many-requests")) {
+        errorMsg = "⚠️ Too many resend attempts. Please wait 5-10 minutes and try again.";
+      } else if (errorMsg.contains("user-not-found")) {
+        errorMsg = "⚠️ User not found. Please register again.";
+      }
+
+      Fluttertoast.showToast(
+        msg: errorMsg,
+        backgroundColor: AppColor.error,
+        textColor: Colors.white,
+        toastLength: Toast.LENGTH_LONG,
+      );
+
+      setState(() {
+        _errorMessage = errorMsg;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResending = false;
+        });
+      }
+    }
   }
 
   @override
@@ -137,6 +204,65 @@ class _EmailVerificationScreenState
 
                   const SizedBox(height: 24),
 
+                  // 🟢 ERROR / INFO MESSAGE
+                  if (_errorMessage != null)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _errorMessage!.contains('✅')
+                            ? Colors.green.shade50
+                            : Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _errorMessage!.contains('✅')
+                              ? Colors.green.shade200
+                              : Colors.red.shade200,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _errorMessage!.contains('✅')
+                                ? Icons.check_circle_outline
+                                : Icons.error_outline,
+                            color: _errorMessage!.contains('✅')
+                                ? Colors.green
+                                : Colors.red,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _errorMessage!,
+                              style: TextStyle(
+                                color: _errorMessage!.contains('✅')
+                                    ? Colors.green.shade800
+                                    : Colors.red.shade800,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _errorMessage = null;
+                              });
+                            },
+                            child: Icon(
+                              Icons.close,
+                              color: _errorMessage!.contains('✅')
+                                  ? Colors.green
+                                  : Colors.red,
+                              size: 18,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  const SizedBox(height: 16),
+
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -157,6 +283,7 @@ class _EmailVerificationScreenState
 
                   const SizedBox(height: 40),
 
+                  // Check Verification Button
                   SizedBox(
                     width: double.infinity,
                     height: 50,
@@ -192,17 +319,34 @@ class _EmailVerificationScreenState
 
                   const SizedBox(height: 16),
 
-                  TextButton(
-                    onPressed: resendEmail,
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                    ),
-                    child: Text(
-                      "Resend Verification Email",
-                      style: GoogleFonts.manrope(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppColor.primary,
+                  // Resend Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 45,
+                    child: OutlinedButton(
+                      onPressed: _isResending ? null : resendEmail,
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: AppColor.primary),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                      ),
+                      child: _isResending
+                          ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: AppColor.primary,
+                          strokeWidth: 2,
+                        ),
+                      )
+                          : Text(
+                        "Resend Verification Email",
+                        style: GoogleFonts.manrope(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColor.primary,
+                        ),
                       ),
                     ),
                   ),

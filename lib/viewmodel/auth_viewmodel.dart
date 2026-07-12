@@ -1,3 +1,4 @@
+// File: lib/viewmodel/auth_viewmodel.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../model/user_model.dart';
@@ -64,7 +65,7 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   // =====================================================
-  // REGISTER
+  // REGISTER - 🟢 FIXED: Removed Duplicate Link Generation
   // =====================================================
 
   Future<bool> register({
@@ -75,6 +76,7 @@ class AuthViewModel extends ChangeNotifier {
     _setError(null);
 
     try {
+      // 1. This call naturally triggers the verification email in AuthRepoImpl
       final success = await _authRepo.registerWithEmail(user.email!, password);
 
       if (!success) {
@@ -89,8 +91,12 @@ class AuthViewModel extends ChangeNotifier {
         return false;
       }
 
+      // 2. Save profile mapping data safely
       await _authRepo.saveUserData(user);
-      await _authRepo.sendEmailVerification();
+
+      // 🟢 FIX REMOVED: await _authRepo.sendEmailVerification();
+      // Reason: Calling this here issued a 2nd security token, immediately breaking link #1 in the inbox.
+
       _setUser(user);
       return true;
     } catch (e) {
@@ -121,7 +127,7 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   // =====================================================
-  // LOGIN - 🟢 FIXED
+  // LOGIN
   // =====================================================
 
   Future<bool> login({
@@ -132,12 +138,9 @@ class AuthViewModel extends ChangeNotifier {
     _setError(null);
 
     try {
-      // 🟢 Call login - THIS WILL THROW AN EXCEPTION ON FAILURE
       final success = await _authRepo.loginWithEmail(email, password);
 
-      // If we get here, login succeeded
       if (success) {
-        // Check if email is verified
         final verified = await isEmailVerified();
         if (!verified) {
           _setError("Please verify your email before logging in.");
@@ -145,7 +148,6 @@ class AuthViewModel extends ChangeNotifier {
           return false;
         }
 
-        // Load user profile
         final uid = _authRepo.getCurrentUserId();
         if (uid != null) {
           final profile = await _authRepo.getUserProfile(uid);
@@ -155,15 +157,11 @@ class AuthViewModel extends ChangeNotifier {
         await _authRepo.saveLoginState(true);
         return true;
       } else {
-        // This shouldn't happen if the repo throws exceptions
         _setError("Login failed. Please try again.");
         return false;
       }
     } catch (e) {
-      // 🟢 THIS IS WHERE ERRORS GO - Firebase throws exceptions
       final errorMessage = e.toString().replaceFirst("Exception: ", "");
-
-      // 🟢 Map common Firebase errors to user-friendly messages
       String userFriendlyMessage = errorMessage;
 
       if (errorMessage.contains("wrong-password") ||

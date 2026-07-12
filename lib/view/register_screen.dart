@@ -29,10 +29,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool hidePassword = true;
   bool hideConfirmPassword = true;
 
+  // 🟢 ADD: Local error state
+  String? _localError;
+
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
 
     final vm = context.read<AuthViewModel>();
+
+    // 🟢 Clear previous errors
+    setState(() {
+      _localError = null;
+    });
 
     final user = UserModel(
       fullName: fullNameController.text.trim(),
@@ -72,11 +80,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
       );
     } else {
+      // 🟢 FIX: Get error from ViewModel
+      String errorMsg = vm.error ?? "Registration failed";
+
+      // 🟢 Check for "too-many-requests" error
+      if (errorMsg.contains("too-many-requests") ||
+          errorMsg.contains("blocked all requests") ||
+          errorMsg.contains("unusual activity")) {
+        errorMsg = "⚠️ Too many attempts from this device. Please wait 10-15 minutes and try again, or switch to mobile data.";
+      }
+
+      // 🟢 Set local error for banner
+      setState(() {
+        _localError = errorMsg;
+      });
+
       // Show the actual error from the Repo
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(vm.error ?? "Registration failed"),
+          content: Text(errorMsg),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
         ),
       );
     }
@@ -127,6 +151,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
                 const SizedBox(height: 40),
+
+                // 🟢 ADD: Error Banner
+                if (_localError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _localError!,
+                              style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _localError = null;
+                              });
+                            },
+                            child: const Icon(Icons.close, color: Colors.red, size: 18),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
 
                 // Full Name
                 _buildLabel("Full Name"),
@@ -271,7 +329,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ],
                 ),
 
-                if (vm.error != null)
+                // 🟢 Keep this for ViewModel error display (as backup)
+                if (vm.error != null && _localError == null)
                   Padding(
                     padding: const EdgeInsets.only(top: 16),
                     child: Center(

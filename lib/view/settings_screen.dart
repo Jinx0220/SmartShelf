@@ -78,6 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _handleAccountDeletion() async {
     final TextEditingController deleteController = TextEditingController();
+    final TextEditingController passwordController = TextEditingController();
     final navigator = Navigator.of(context);
     final authVm = context.read<AuthViewModel>();
     final dashboardVm = context.read<DashboardViewModel>();
@@ -99,6 +100,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: GoogleFonts.manrope(fontSize: 14),
             ),
             const SizedBox(height: 12),
+            // 🟢 ADD: Password field for re-authentication
+            Text(
+              "Enter your password to confirm:",
+              style: GoogleFonts.manrope(fontSize: 12, fontWeight: FontWeight.bold, color: AppColor.secondary),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              decoration: InputDecoration(
+                hintText: "Password",
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+            ),
+            const SizedBox(height: 12),
             Text(
               "Type 'DELETE' to confirm:",
               style: GoogleFonts.manrope(fontSize: 12, fontWeight: FontWeight.bold, color: AppColor.secondary),
@@ -114,10 +131,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColor.error),
-            onPressed: () => Navigator.pop(context, deleteController.text.trim() == 'DELETE'),
+            onPressed: () {
+              // Check if DELETE is typed and password is not empty
+              if (deleteController.text.trim() == 'DELETE' && passwordController.text.isNotEmpty) {
+                Navigator.pop(context, true);
+              } else {
+                Fluttertoast.showToast(
+                  msg: "Please type 'DELETE' and enter your password",
+                  backgroundColor: AppColor.error,
+                  textColor: Colors.white,
+                );
+              }
+            },
             child: const Text("Confirm Delete"),
           )
         ],
@@ -125,18 +156,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
 
     if (confirm == true) {
-      Fluttertoast.showToast(msg: "Deleting account references...");
-      bool success = await authVm.deleteAccountPermanently();
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              const CircularProgressIndicator(color: AppColor.primary),
+              const SizedBox(height: 20),
+              Text(
+                "Deleting account...",
+                style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+      );
 
-      if (success) {
-        await dashboardVm.loadDashboardData();
+      try {
+        // 🟢 Step 1: Re-authenticate the user
+        final bool reAuthSuccess = await authVm.reauthenticateUser(passwordController.text);
 
-        navigator.pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-              (route) => false,
+        // Close loading dialog
+        navigator.pop();
+
+        if (!reAuthSuccess) {
+          Fluttertoast.showToast(
+            msg: "Invalid password. Please try again.",
+            backgroundColor: AppColor.error,
+            textColor: Colors.white,
+          );
+          return;
+        }
+
+        // 🟢 Step 2: Now delete the account
+        Fluttertoast.showToast(msg: "Deleting account references...");
+        bool success = await authVm.deleteAccountPermanently();
+
+        if (success) {
+          await dashboardVm.loadDashboardData();
+
+          navigator.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+                (route) => false,
+          );
+        } else {
+          Fluttertoast.showToast(
+            msg: authVm.error ?? "Failed to delete account.",
+            backgroundColor: AppColor.error,
+            textColor: Colors.white,
+          );
+        }
+      } catch (e) {
+        // Close loading dialog if still open
+        navigator.pop();
+        Fluttertoast.showToast(
+          msg: "Error: ${e.toString()}",
+          backgroundColor: AppColor.error,
+          textColor: Colors.white,
         );
-      } else {
-        Fluttertoast.showToast(msg: authVm.error ?? "Failed to delete account.");
       }
     }
   }

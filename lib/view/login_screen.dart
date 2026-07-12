@@ -22,7 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController passwordController = TextEditingController();
 
   bool isPasswordVisible = false;
-  String? _errorMessage; // 1. Added variable to hold the error
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -31,33 +31,65 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  // Helper: Clear error message
+  void _clearError() {
+    if (_errorMessage != null) {
+      setState(() {
+        _errorMessage = null;
+      });
+    }
+  }
+
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
     final vm = context.read<AuthViewModel>();
 
-    // 1. Attempt the login
+    // Clear previous error
+    setState(() {
+      _errorMessage = null;
+    });
+
+    // 🟢 DEBUG: Log before login
+    debugPrint("🔐 [LOGIN] Attempting login with email: ${emailController.text.trim()}");
+
+    // Attempt the login
     final success = await vm.login(
       email: emailController.text.trim(),
       password: passwordController.text.trim(),
     );
 
+    // 🟢 DEBUG: Log after login
+    debugPrint("🔐 [LOGIN] Success: $success");
+    debugPrint("🔐 [LOGIN] VM Error: ${vm.error}");
+
     if (!mounted) return;
 
-    // 2. Handle outcome
+    // Handle outcome
     if (success) {
+      debugPrint("🔐 [LOGIN] Login successful, navigating to dashboard...");
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const MainLayoutScreen()),
             (route) => false,
       );
     } else {
-      // THIS IS THE FIX: The Repo throws the error, the ViewModel catches it,
-      // now we display it here.
+      // Get the error message from ViewModel
+      final String errorMsg = vm.error ?? "Login failed. Please check your credentials.";
+
+      // 🟢 DEBUG: Log the error being shown
+      debugPrint("🔐 [LOGIN] Showing error: $errorMsg");
+
+      setState(() {
+        _errorMessage = errorMsg;
+      });
+
+      // Also show SnackBar for visibility
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(vm.error ?? "Login failed. Please check your credentials."),
+          content: Text(errorMsg),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
         ),
       );
     }
@@ -190,7 +222,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
 
-                // 4. DISPLAY ERROR BANNER HERE
+                // 🟢 ERROR BANNER
                 if (_errorMessage != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 20),
@@ -210,6 +242,14 @@ class _LoginScreenState extends State<LoginScreen> {
                               _errorMessage!,
                               style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
                             ),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _errorMessage = null;
+                              });
+                            },
+                            child: const Icon(Icons.close, color: Colors.red, size: 18),
                           ),
                         ],
                       ),
@@ -231,6 +271,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 TextFormField(
                   controller: emailController,
+                  onChanged: (_) => _clearError(),
                   keyboardType: TextInputType.emailAddress,
                   style: GoogleFonts.manrope(fontSize: 16, color: AppColor.neutral),
                   decoration: InputDecoration(
@@ -279,6 +320,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 TextFormField(
                   controller: passwordController,
+                  onChanged: (_) => _clearError(),
                   obscureText: !isPasswordVisible,
                   style: GoogleFonts.manrope(fontSize: 16, color: AppColor.neutral),
                   decoration: InputDecoration(

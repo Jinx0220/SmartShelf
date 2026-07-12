@@ -11,6 +11,10 @@ class AuthRepoImpl implements AuthRepo {
 
   CollectionReference get _users => _firestore.collection('users');
 
+  // 🟢 ADD: Store last error message
+  String? _lastError;
+  String? get lastError => _lastError;
+
   // =====================================================
   // REGISTER
   // =====================================================
@@ -20,36 +24,43 @@ class AuthRepoImpl implements AuthRepo {
       String email,
       String password,
       ) async {
+    _lastError = null;
     try {
-      final credential =
-      await _auth.createUserWithEmailAndPassword(
+      final credential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
 
       if (credential.user == null) {
+        _lastError = "Registration failed. Please try again.";
         return false;
       }
 
       await credential.user!.sendEmailVerification();
-
       return true;
     } on FirebaseAuthException catch (e) {
       switch (e.code) {
         case "email-already-in-use":
-          throw Exception("Email already exists.");
+          _lastError = "Email already exists. Please use a different email.";
+          break;
         case "invalid-email":
-          throw Exception("Invalid email.");
+          _lastError = "Invalid email format. Please enter a valid email.";
+          break;
         case "weak-password":
-          throw Exception("Password is too weak.");
+          _lastError = "Password is too weak. Please use at least 6 characters.";
+          break;
         default:
-          throw Exception(e.message ?? "Registration failed.");
+          _lastError = e.message ?? "Registration failed. Please try again.";
       }
+      return false;
+    } catch (e) {
+      _lastError = "An unexpected error occurred. Please try again.";
+      return false;
     }
   }
 
   // =====================================================
-  // LOGIN
+  // LOGIN - 🟢 FIXED: Returns false with specific error messages
   // =====================================================
 
   @override
@@ -57,9 +68,9 @@ class AuthRepoImpl implements AuthRepo {
       String email,
       String password,
       ) async {
+    _lastError = null;
     try {
-      final credential =
-      await _auth.signInWithEmailAndPassword(
+      final credential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -68,9 +79,8 @@ class AuthRepoImpl implements AuthRepo {
 
       if (!(credential.user?.emailVerified ?? false)) {
         await _auth.signOut();
-        throw Exception(
-          "Please verify your email before logging in.",
-        );
+        _lastError = "Please verify your email before logging in. Check your inbox.";
+        return false;
       }
 
       final prefs = await SharedPreferences.getInstance();
@@ -78,17 +88,36 @@ class AuthRepoImpl implements AuthRepo {
 
       return true;
     } on FirebaseAuthException catch (e) {
+      // 🟢 FIX: Set specific error messages based on Firebase error codes
       switch (e.code) {
         case "user-not-found":
-          throw Exception("No account found.");
+          _lastError = "No account found with this email address.";
+          break;
         case "wrong-password":
+          _lastError = "Incorrect password. Please try again.";
+          break;
         case "invalid-credential":
-          throw Exception("Incorrect email or password.");
+          _lastError = "Invalid email or password. Please try again.";
+          break;
         case "invalid-email":
-          throw Exception("Invalid email.");
+          _lastError = "Invalid email format. Please enter a valid email.";
+          break;
+        case "user-disabled":
+          _lastError = "This account has been disabled. Please contact support.";
+          break;
+        case "too-many-requests":
+          _lastError = "Too many failed attempts. Please try again later.";
+          break;
+        case "network-request-failed":
+          _lastError = "Network error. Please check your internet connection.";
+          break;
         default:
-          throw Exception(e.message ?? "Login failed.");
+          _lastError = e.message ?? "Login failed. Please check your credentials.";
       }
+      return false;
+    } catch (e) {
+      _lastError = "An unexpected error occurred. Please try again.";
+      return false;
     }
   }
 
@@ -99,7 +128,6 @@ class AuthRepoImpl implements AuthRepo {
   @override
   Future<void> sendEmailVerification() async {
     final user = _auth.currentUser;
-
     if (user != null && !user.emailVerified) {
       await user.sendEmailVerification();
     }
@@ -122,8 +150,19 @@ class AuthRepoImpl implements AuthRepo {
 
   @override
   Future<void> sendPasswordResetEmail(String email) async {
-    // If your variable name is different, change '_firebaseAuth' to match your instance name
-    await _auth.sendPasswordResetEmail(email: email);
+    _lastError = null;
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+    } on FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case "user-not-found":
+          _lastError = "No account found with this email address.";
+          break;
+        default:
+          _lastError = e.message ?? "Failed to send password reset email.";
+      }
+      rethrow;
+    }
   }
 
   // =====================================================
@@ -133,7 +172,6 @@ class AuthRepoImpl implements AuthRepo {
   @override
   Future<void> logout() async {
     await _auth.signOut();
-
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool("isLoggedIn", false);
   }
@@ -141,13 +179,8 @@ class AuthRepoImpl implements AuthRepo {
   @override
   Future<bool> checkLoginStatus() async {
     final prefs = await SharedPreferences.getInstance();
-
-    final logged =
-        prefs.getBool("isLoggedIn") ?? false;
-
-    return logged &&
-        _auth.currentUser != null &&
-        _auth.currentUser!.emailVerified;
+    final logged = prefs.getBool("isLoggedIn") ?? false;
+    return logged && _auth.currentUser != null && _auth.currentUser!.emailVerified;
   }
 
   @override
@@ -163,44 +196,30 @@ class AuthRepoImpl implements AuthRepo {
   @override
   Future<void> saveUserData(UserModel user) async {
     final uid = getCurrentUserId();
-
     if (uid == null) {
       throw Exception("User not logged in.");
     }
-
     final updated = user.copyWith(
       id: uid,
       lastLogin: DateTime.now(),
     );
-
     await _users.doc(uid).set(updated.toMap());
   }
 
   @override
-  Future<UserModel?> getUserProfile(
-      String uid,
-      ) async {
+  Future<UserModel?> getUserProfile(String uid) async {
     try {
-      final doc =
-      await _users.doc(uid).get();
-
+      final doc = await _users.doc(uid).get();
       if (!doc.exists) return null;
-
-      return UserModel.fromMap(
-        doc.data() as Map<String, dynamic>,
-      );
+      return UserModel.fromMap(doc.data() as Map<String, dynamic>);
     } catch (_) {
       return null;
     }
   }
 
   @override
-  Future<void> updateProfile(
-      UserModel user,
-      ) async {
-    await _users
-        .doc(user.id)
-        .update(user.toMap());
+  Future<void> updateProfile(UserModel user) async {
+    await _users.doc(user.id).update(user.toMap());
   }
 
   // =====================================================
@@ -208,9 +227,7 @@ class AuthRepoImpl implements AuthRepo {
   // =====================================================
 
   @override
-  Future<void> updateProfileImage(
-      String imagePath,
-      ) async {
+  Future<void> updateProfileImage(String imagePath) async {
     throw UnimplementedError();
   }
 
@@ -220,17 +237,14 @@ class AuthRepoImpl implements AuthRepo {
       final uid = getCurrentUserId();
       final currentUser = _auth.currentUser;
 
-      // 1. Purge remote Cloud Firestore document link references
       if (uid != null) {
         await _users.doc(uid).delete();
       }
 
-      // 2. Kill credential access tokens on Firebase Auth servers
       if (currentUser != null) {
         await currentUser.delete();
       }
 
-      // 3. Clear local session tokens inside SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool("isLoggedIn", false);
     } on FirebaseAuthException catch (e) {
@@ -248,13 +262,8 @@ class AuthRepoImpl implements AuthRepo {
   // =====================================================
 
   @override
-  Future<void> savePreference(
-      String key,
-      dynamic value,
-      ) async {
-    final prefs =
-    await SharedPreferences.getInstance();
-
+  Future<void> savePreference(String key, dynamic value) async {
+    final prefs = await SharedPreferences.getInstance();
     if (value is String) {
       await prefs.setString(key, value);
     } else if (value is bool) {
@@ -269,12 +278,8 @@ class AuthRepoImpl implements AuthRepo {
   }
 
   @override
-  Future<dynamic> getPreference(
-      String key,
-      ) async {
-    final prefs =
-    await SharedPreferences.getInstance();
-
+  Future<dynamic> getPreference(String key) async {
+    final prefs = await SharedPreferences.getInstance();
     return prefs.get(key);
   }
 }

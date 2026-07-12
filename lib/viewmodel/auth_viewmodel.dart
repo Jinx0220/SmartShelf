@@ -2,13 +2,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../model/user_model.dart';
 import '../repo/auth_repo.dart';
+import '../repo/auth_repo_impl.dart';
 
 class AuthViewModel extends ChangeNotifier {
   final AuthRepo _authRepo;
 
   AuthViewModel({required AuthRepo authRepo})
       : _authRepo = authRepo {
-    // Automatically verify persistent session on application startup
     _initializeAuth();
   }
 
@@ -17,13 +17,10 @@ class AuthViewModel extends ChangeNotifier {
   UserModel? _user;
   bool _loggedIn = false;
 
-  // Existing getters preserved for backward compatibility
   bool get loading => _loading;
   String? get error => _error;
   UserModel? get user => _user;
   bool get loggedIn => _loggedIn;
-
-  // New aliases to perfectly bridge with your main.dart Gatekeeper logic
   bool get isLoading => _loading;
   bool get isAuthenticated => _loggedIn;
 
@@ -49,7 +46,7 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   // =====================================================
-  // INITIALIZATION (AUTO-LOGIN CHECK)
+  // INITIALIZATION
   // =====================================================
 
   Future<void> _initializeAuth() async {
@@ -81,7 +78,14 @@ class AuthViewModel extends ChangeNotifier {
       final success = await _authRepo.registerWithEmail(user.email!, password);
 
       if (!success) {
-        if (_error == null) _setError("Registration failed. Please check your details.");
+        String errorMsg = "Registration failed. Please check your details.";
+        try {
+          final repo = _authRepo as AuthRepoImpl;
+          if (repo.lastError != null) {
+            errorMsg = repo.lastError!;
+          }
+        } catch (_) {}
+        _setError(errorMsg);
         return false;
       }
 
@@ -94,7 +98,6 @@ class AuthViewModel extends ChangeNotifier {
       if (user != null) {
         await user.delete();
       }
-
       _setError(e.toString().replaceFirst("Exception: ", ""));
       return false;
     } finally {
@@ -106,10 +109,7 @@ class AuthViewModel extends ChangeNotifier {
     _setLoading(true);
     _setError(null);
     try {
-      // Deletes remote core instance profiles
       await _authRepo.deleteAccount();
-
-      // FIXED: Safely cleans session flags globally across the system trees to prevent redirect errors
       _setUser(null);
       return true;
     } catch (e) {
@@ -121,7 +121,7 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   // =====================================================
-  // LOGIN
+  // LOGIN - 🟢 FIXED
   // =====================================================
 
   Future<bool> login({
@@ -132,30 +132,61 @@ class AuthViewModel extends ChangeNotifier {
     _setError(null);
 
     try {
+      // 🟢 Call login - THIS WILL THROW AN EXCEPTION ON FAILURE
       final success = await _authRepo.loginWithEmail(email, password);
 
-      if (!success) {
-        if (_error == null) _setError("Invalid email or password.");
+      // If we get here, login succeeded
+      if (success) {
+        // Check if email is verified
+        final verified = await isEmailVerified();
+        if (!verified) {
+          _setError("Please verify your email before logging in.");
+          await _authRepo.logout();
+          return false;
+        }
+
+        // Load user profile
+        final uid = _authRepo.getCurrentUserId();
+        if (uid != null) {
+          final profile = await _authRepo.getUserProfile(uid);
+          _setUser(profile);
+        }
+
+        await _authRepo.saveLoginState(true);
+        return true;
+      } else {
+        // This shouldn't happen if the repo throws exceptions
+        _setError("Login failed. Please try again.");
         return false;
       }
-
-      final verified = await isEmailVerified();
-      if (!verified) {
-        _setError("Please verify your email before logging in.");
-        await _authRepo.logout();
-        return false;
-      }
-
-      final uid = _authRepo.getCurrentUserId();
-      if (uid != null) {
-        final profile = await _authRepo.getUserProfile(uid);
-        _setUser(profile);
-      }
-
-      await _authRepo.saveLoginState(true);
-      return true;
     } catch (e) {
-      _setError(e.toString().replaceFirst("Exception: ", ""));
+      // 🟢 THIS IS WHERE ERRORS GO - Firebase throws exceptions
+      final errorMessage = e.toString().replaceFirst("Exception: ", "");
+
+      // 🟢 Map common Firebase errors to user-friendly messages
+      String userFriendlyMessage = errorMessage;
+
+      if (errorMessage.contains("wrong-password") ||
+          errorMessage.contains("invalid-credential") ||
+          errorMessage.contains("Incorrect email or password")) {
+        userFriendlyMessage = "Incorrect password. Please try again.";
+      } else if (errorMessage.contains("user-not-found") ||
+          errorMessage.contains("No account found")) {
+        userFriendlyMessage = "No account found with this email address.";
+      } else if (errorMessage.contains("invalid-email")) {
+        userFriendlyMessage = "Invalid email format. Please enter a valid email.";
+      } else if (errorMessage.contains("user-disabled")) {
+        userFriendlyMessage = "This account has been disabled. Please contact support.";
+      } else if (errorMessage.contains("too-many-requests")) {
+        userFriendlyMessage = "Too many failed attempts. Please try again later.";
+      } else if (errorMessage.contains("network-request-failed") ||
+          errorMessage.contains("Network error")) {
+        userFriendlyMessage = "Network error. Please check your internet connection.";
+      } else if (errorMessage.contains("Please verify your email")) {
+        userFriendlyMessage = "Please verify your email before logging in. Check your inbox.";
+      }
+
+      _setError(userFriendlyMessage);
       return false;
     } finally {
       _setLoading(false);
@@ -178,7 +209,6 @@ class AuthViewModel extends ChangeNotifier {
   Future<bool> isEmailVerified() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
-
     await user.reload();
     return FirebaseAuth.instance.currentUser?.emailVerified ?? false;
   }
@@ -209,7 +239,6 @@ class AuthViewModel extends ChangeNotifier {
   Future<void> loadCurrentUser() async {
     final uid = _authRepo.getCurrentUserId();
     if (uid == null) return;
-
     final profile = await _authRepo.getUserProfile(uid);
     _setUser(profile);
   }
@@ -259,5 +288,39 @@ class AuthViewModel extends ChangeNotifier {
 
   Future<dynamic> getPreference(String key) async {
     return await _authRepo.getPreference(key);
+  }
+
+  // =====================================================
+  // RE-AUTHENTICATE
+  // =====================================================
+
+  Future<bool> reauthenticateUser(String password) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return false;
+
+      final email = user.email;
+      if (email == null || email.isEmpty) {
+        final userModel = await _authRepo.getUserProfile('current');
+        if (userModel?.email == null) {
+          _setError("No email found for re-authentication");
+          return false;
+        }
+      }
+
+      final credential = EmailAuthProvider.credential(
+        email: email ?? user.email ?? '',
+        password: password,
+      );
+
+      await user.reauthenticateWithCredential(credential);
+      return true;
+    } on FirebaseAuthException catch (e) {
+      _setError(e.message ?? "Re-authentication failed");
+      return false;
+    } catch (e) {
+      _setError(e.toString());
+      return false;
+    }
   }
 }

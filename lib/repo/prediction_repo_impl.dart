@@ -10,9 +10,16 @@ import 'settings_repo_impl.dart';
 import 'product_repo_impl.dart';
 
 class PredictionRepoImpl implements PredictionRepo {
-  final CollectionReference _collection =
-  FirebaseServices().firestore.collection('predictions');
-  final AIPredictionService _aiService = AIPredictionService();
+  final FirebaseFirestore _firestore;
+  final AIPredictionService _aiService;
+
+  PredictionRepoImpl({
+    FirebaseFirestore? firestore,
+    AIPredictionService? aiService,
+  })  : _firestore = firestore ?? FirebaseServices().firestore,
+        _aiService = aiService ?? AIPredictionService();
+
+  CollectionReference get _collection => _firestore.collection('predictions');
 
   @override
   Future<List<PredictionModel>> generatePredictions(
@@ -49,7 +56,7 @@ class PredictionRepoImpl implements PredictionRepo {
 
   @override
   Future<void> savePredictions(List<PredictionModel> predictions) async {
-    final batch = FirebaseServices().firestore.batch();
+    final batch = _firestore.batch();
     for (var prediction in predictions) {
       final ref = _collection.doc(prediction.id ??
           '${prediction.productId}_${DateTime.now().millisecondsSinceEpoch}');
@@ -115,7 +122,7 @@ class PredictionRepoImpl implements PredictionRepo {
           .get();
 
       // FIXED: Batch the structural inventory mutations to minimize multi-trip network thrashing
-      final batch = FirebaseServices().firestore.batch();
+      final batch = _firestore.batch();
       for (var doc in snapshot.docs) {
         batch.delete(doc.reference);
       }
@@ -169,7 +176,7 @@ class PredictionRepoImpl implements PredictionRepo {
           .get();
 
       // FIXED: Refactored individual await deletions to run in a fast, single atomic write batch
-      final batch = FirebaseServices().firestore.batch();
+      final batch = _firestore.batch();
       for (var doc in snapshot.docs) {
         batch.delete(doc.reference);
       }

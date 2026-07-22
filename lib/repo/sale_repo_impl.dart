@@ -3,8 +3,14 @@ import '../model/sale_model.dart';
 import 'sale_repo.dart';
 
 class SaleRepoImpl implements SaleRepo {
-  final CollectionReference _collection =
-  FirebaseFirestore.instance.collection('sales');
+  final FirebaseFirestore firestore;
+
+  SaleRepoImpl({
+    FirebaseFirestore? firestore,
+  }) : firestore = firestore ?? FirebaseFirestore.instance;
+
+  CollectionReference<Map<String, dynamic>> get _collection =>
+      firestore.collection('sales');
 
   @override
   Future<void> addSale(SaleModel sale) async {

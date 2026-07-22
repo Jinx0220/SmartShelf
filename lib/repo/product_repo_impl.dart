@@ -3,8 +3,14 @@ import '../model/product_model.dart';
 import 'product_repo.dart';
 
 class ProductRepoImpl implements ProductRepo {
-  final CollectionReference _collection =
-  FirebaseFirestore.instance.collection('products');
+  final FirebaseFirestore firestore;
+
+  ProductRepoImpl({
+    FirebaseFirestore? firestore,
+  }) : firestore = firestore ?? FirebaseFirestore.instance;
+
+  CollectionReference<Map<String, dynamic>> get _collection =>
+      firestore.collection('products');
 
   @override
   Future<void> addProduct(ProductModel model) async {

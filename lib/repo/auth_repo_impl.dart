@@ -6,8 +6,14 @@ import '../model/user_model.dart';
 import 'auth_repo.dart';
 
 class AuthRepoImpl implements AuthRepo {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth;
+  final FirebaseFirestore _firestore;
+
+  AuthRepoImpl({
+    FirebaseAuth? auth,
+    FirebaseFirestore? firestore,
+  })  : _auth = auth ?? FirebaseAuth.instance,
+        _firestore = firestore ?? FirebaseFirestore.instance;
 
   CollectionReference get _users => _firestore.collection('users');
 
@@ -243,6 +249,7 @@ class AuthRepoImpl implements AuthRepo {
 
       if (currentUser != null) {
         await currentUser.delete();
+        await _auth.signOut();
       }
 
       final prefs = await SharedPreferences.getInstance();
